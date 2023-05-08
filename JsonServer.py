@@ -9,7 +9,6 @@ import PIL
 import json
 import time
 import wmi
-##import atexit
 
 
 SCode = 'OK' #!!таке шось, треба одбудмати логіку, що нам повертати якщо це запит без аналізу
@@ -53,17 +52,11 @@ def Calibrate(nozzlesize: float)->Result:
             b=cfg.conf['nozzle.x0'] = root['InnerX0'] + cfg.conf['crop.left']
             c=cfg.conf['nozzle.y0'] = root['InnerY0'] + cfg.conf['crop.top']
             print(f'Calibrated. Scale={a}, Z0:({b},{c})')
+            return Success(SCode)
     else:
         error = response_dict["error"]
-
-
-    return Success(SCode)
-
-##    if sts.OUT_NozzleInnerCircularity>0.95 and sts.OUT_NozzleInnerDiameterPX > 16:
-##        cfg.conf['scalecoeff'] = sts.OUT_NozzleInnerDiameterPX / nozzlesize
-##        return Success(SCode)
-##    else:
 ##        return Error(-4,'Scale calibration error','Scale calibration error. Nozzle hole is not round enough')
+        return rrror
 
 
 def Wait4Result(stoptime):
