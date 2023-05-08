@@ -56,7 +56,7 @@ def Calibrate(nozzlesize: float)->Result:
     else:
         error = response_dict["error"]
 ##        return Error(-4,'Scale calibration error','Scale calibration error. Nozzle hole is not round enough')
-        return rrror
+        return error
 
 
 def Wait4Result(stoptime):

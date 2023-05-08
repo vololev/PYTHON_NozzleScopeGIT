@@ -944,11 +944,10 @@ class App:
 def main():
     # Create a window and pass it to the Application object
     print('Starting GUI')
-    Z = App(tk.Tk(), "NozzleAnalyzer")
+    Z = App(tk.Tk(), "NozzleScope")
 
 
 def stop():
-
     pass
 
 
@@ -957,5 +956,6 @@ sts = Service.sts
 job = Service.job
 
 if __name__ == "__main__":
+    print("start")
     main()
 
