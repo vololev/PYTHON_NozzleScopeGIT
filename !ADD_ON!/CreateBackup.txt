@@ -1,0 +1,7 @@
+..\Main.py
+..\Service.py
+..\JsonServer.py
+..\config.json
+..\CamBeam.json
+..\CamNozzle.json
+..\CamGeneral.json

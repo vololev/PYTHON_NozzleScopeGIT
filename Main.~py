@@ -1,0 +1,729 @@
+﻿import Service
+
+import threading
+import tkinter
+from tkinter import ttk, filedialog, colorchooser
+from tkinter.tix import *
+
+import os
+from PIL import Image, ImageTk, ImageDraw
+
+from datetime import datetime
+import time
+
+
+
+def _from_rgb(rgb):  # translates an rgb tuple of int to a tkinter friendly color code
+    return "#%02x%02x%02x" % rgb
+
+class App:
+    def __del__(self):
+        pass
+    def __init__(self, window, window_title):
+        self.nocameraimg = ImageTk.PhotoImage(Image.open("no_camera-512-white.png")) # no-camera image
+        self.gridslist = ['Center','Grid', 'Military']
+
+        self.x=0
+        self.y=0
+
+        self.LineStyle={'color':(255,255,255),'opacity':128,'width' : 2}
+        self.LineLast=''
+        self.LinesH={} # horizontal
+        self.LinesV={} # vertical
+
+        window.attributes('-toolwindow', True)
+        #window.protocol("WM_DELETE_WINDOW", self.close_window)
+        window.protocol("WM_DELETE_WINDOW", self.hide_window)
+        window.resizable(False, False)
+
+
+        self.window = window
+        self.window.title(window_title)
+
+        self.window.bind('<Left>', self.LeftKey)
+        self.window.bind('<Right>', self.RightKey)
+        self.window.bind('<Up>', self.UpKey)
+        self.window.bind('<Down>', self.DownKey)
+        self.window.bind('<Prior>', self.PageUp)
+        self.window.bind('<Next>', self.PageDown)
+
+        self.window.bind('<Control-Key-o>',self.CtrlO) #відкриваємо файл
+        self.window.bind('<Control-Key-f>',self.CtrlF) #починаємо пошук лазер
+        self.window.bind('<Control-Key-r>',self.CtrlR) #починаємо аналіз сопел
+        self.window.bind('<Control-Key-p>',self.CtrlP) #друк всіх параметрів
+
+        #h = int(self.vid.height)
+
+        if cfg.conf['nozzle.x0']==0:
+            cfg.conf['nozzle.x0'] = cfg.conf['nozzle.y0'] = h/2 #задаємо початкову точку як середину кадра
+
+        # Create a canvas that can fit the above video source size
+        self.canvas = tkinter.Canvas(window, width = Service.vid.height, height = Service.vid.height)
+        self.canvas.pack(side='left', padx=5, pady=5, anchor="center")
+        #self.canvas.pack(pady=20, anchor="center")
+        #self.canvas.grid(column=0, row=0)
+        #self.canvas.place(relx=0, rely=0, anchor=CENTER)
+        self.canvas.bind("<Button-1>", self.leftclick)
+        self.canvas.bind("<Motion>", self.leftmotion)
+        #cnvs.bind("<B1-Motion>", self.leftmotion)
+        #cnvs.bind('<ButtonRelease-1>', leftup)
+        #cnvs.bind("<Button-2>", middleclick)
+        #cnvs.bind("<Button-3>", rightclick)
+        #cnvs.tag_bind(tag_name, "<Enter>", lambda event: self.check_hand_enter())
+        #cnvs.tag_bind(tag_name, "<Leave>", lambda event: self.check_hand_leave())
+
+        self.btnConfirm = tkinter.Button(self.canvas, text = ' Confirm ', bg='green', height=3, width = 10, anchor=tkinter.CENTER, command = self.btnConfirm_click)
+        #self.btnConfirm = tkinter.Button(self.canvas, text = ' Confirm ', bg='green', command = self.btnConfirm_click)
+        self.btnConfirm.place(relx=0.85, rely = 0.9)
+        self.btnAbort = tkinter.Button(self.canvas, text = ' Abort ', bg='red', height=3, width = 10, anchor=tkinter.CENTER, command = self.btnAbort_click)
+        #self.btnAbort = tkinter.Button(self.canvas, text = ' Abort ', bg='red', command = self.btnAbort_click)
+        self.btnAbort.place(relx=0.70, rely = 0.9)
+
+
+
+        self.framecfg = tkinter.Frame(window, relief='sunken', borderwidth=1, width=200)
+        #self.framecfg.grid(row=0, column=1)
+        #self.framecfg.pack(side='right', fill='both')
+
+
+        frameCustom = tkinter.LabelFrame(self.framecfg, width = 240, height = 120, name='frameCustom', text='Custom grid')
+        frameCustom.pack(padx=5, pady=5, fill='both')
+
+        cmbWidth = ttk.Combobox(frameCustom, state='readonly', width=6) #, font=myFontBig)
+        cmbWidth.bind('<<ComboboxSelected>>', self.cmbWidth_change)
+        widthList = (1, 2, 4, 6, 8, 10)
+        cmbWidth['values']=widthList
+        index = widthList.index(self.LineStyle['width'])
+        cmbWidth.current(index)
+        cmbWidth.place(x=10, y=17)
+
+        #self.btnColor = tkinter.Button(frameCustom, text='LineColor', width = 10, command = self.btnColor_click)
+        btnColor = tkinter.Button(frameCustom, text='Color', width = 10, bg=_from_rgb(self.LineStyle['color']))
+        btnColor.bind('<ButtonRelease-1>', self.btnColor_click)
+        btnColor.place(x=80, y=15)
+
+        cmbTransparency = tkinter.Scale(frameCustom, orient = 'horizontal', to=255, length =180) #, font=myFontBig)
+        cmbTransparency.set(self.LineStyle['opacity'])
+        cmbTransparency.bind('<ButtonRelease-1>', self.cmbTransparency_change)
+        cmbTransparency.place(x=180, y=0)
+
+
+        btn_open = tkinter.Button(frameCustom, width=8, text='Open',  command=self.open)
+        btn_open.place(x=10, y=60)
+
+        btn_save = tkinter.Button(frameCustom, width=8, text='Save',  command=self.save)
+        btn_save.place(x=90, y=60)
+
+        btn_new = tkinter.Button(frameCustom, width=8, text='New',  command=self.new)
+        btn_new.place(x=170, y=60)
+
+        self.showOn= tkinter.IntVar()
+        chkbtn_show = tkinter.Checkbutton(frameCustom, width=6, text = 'Custom', variable = self.showOn)
+        chkbtn_show.place(x=240, y=60)
+
+        self.btn_edit = tkinter.Button(frameCustom, width=6, text = 'Edit', command = self.editOn)
+        self.btn_edit.place(x=300, y=60)
+
+
+        # Button to calibrate color
+        self.btn_calibrate=tkinter.Button(self.framecfg, text="Calibrate", width=16, command=self.calibrate)
+        #self.btn_calibrate.bind('<Button-1>', self.calibrate)
+        #btn_calibrate.bind('<ButtonRelease-1>', self.calibrate)
+        self.btn_calibrate.pack(pady=5)
+
+
+        # Button to take a snapshot
+        btn_snapshot=tkinter.Button(self.framecfg, text="Snapshot", width=16, command=Service.vid.snapshot)
+        #self.btn_snapshot.pack(anchor=tkinter.CENTER, expand=True)
+        btn_snapshot.pack(pady=5)
+        #self.btn_snapshot.place(x = h+20, y = 10)
+
+        # Button for cam settings
+        btn_camsett=tkinter.Button(self.framecfg, text="Cam Settings", width=16,  command=self.settings)
+        btn_camsett.pack(pady=5)
+
+
+        # ShowGrid checkbutton
+        self.showgrid= tkinter.BooleanVar()
+        chkbtn_showgrid = tkinter.Checkbutton(self.framecfg, width=6, text = 'Grid', command=self.chkbtn_showgrid_changed, variable = self.showgrid, onvalue = True, offvalue = False)
+        chkbtn_showgrid.place(x=60, y=240)
+
+        # Combobox to select grid
+        self.cmbSight=ttk.Combobox(self.framecfg, state='readonly', width=16) #, font=myFontBig)
+        #cmbSight.bind('<<ComboboxSelected>>', self.sight)
+        self.cmbSight['values'] = self.gridslist
+        self.cmbSight.current(0)
+        self.cmbSight.pack(pady=5)
+
+
+
+
+        frame2 = tkinter.Frame(self.framecfg, relief='flat') #, width=240, height=80, borderwidth=1
+        frame2.pack(side='bottom', fill='both', pady=10, padx=2) #,  expand=True
+
+        # Text for settings edit
+        self.text_cfg = tkinter.Text(frame2, width=48, height=16)
+        self.restore() # UKR витягаємо попереднє з dictionary
+        #self.text_cfg.bind_all("<<Modified>>", self.onModification)
+        self.text_cfg.bind("<Key>", self.onModification)
+        self.text_cfg.pack()
+
+        self.but_apply = tkinter.Button(frame2, text="Apply", width=12, command=self.apply)
+        #self.btn_snapshot.pack(anchor=tkinter.CENTER, expand=True)
+        self.but_apply.pack(padx=8, pady=5,side = 'right')
+
+        self.but_restore = tkinter.Button(frame2, text="Restore", width=12, command=self.restore)
+        #self.btn_snapshot.pack(anchor=tkinter.CENTER, expand=True)
+        self.but_restore.pack(padx=8, pady=5,side = 'right')
+
+
+        self.hide_window() #ховаємо вікно при запуску
+
+        # Після першого запуску, метод "update", буде автоматично запускатися кожні delay мс. 100мс = 10fps
+        self.delay = 100
+        self.update()
+        self.window.mainloop()
+
+    def chkbtn_showgrid_changed(self):
+        sts.IN_BeamShowGrid = self.showgrid.get()
+        if sts.IN_BeamShowGrid:
+            self.cmbSight['state'] = 'normal'
+        else:
+            self.cmbSight['state'] = 'disabled'
+        pass
+
+    def close_window(self): # Збергіаємся та виходимо
+        print("closing main window")
+        #cfg.save_cfg()
+        #self.window.destroy()
+
+
+    def hide_window(self): # вимикаємо отримання кадрів, відмальовку і ховаємо вікно
+        # При закриванні вікна і активності центрування променя в ручному режимі
+        # виставляємо статус в fault
+        if job.Request == job.RequestBeamMANUAL and job.state == job.Work:
+            job.setAbort()
+        self.framecfg.pack_forget() #ховаємо бічну панель налашутвань
+        print("GUI_Hide")
+        sts.IN_CameraShow  = False
+        self.window.withdraw() #ховаємо вікно
+
+    def show_window(self):
+        print("GUI_Show")
+        #sts.IN_GuiShow = False
+        sts.IN_CameraShow  = True
+        self.window.deiconify()
+        #self.window.state('zoomed')
+        self.window.attributes('-topmost', 1)
+        self.window.attributes('-topmost', 0)
+
+    def btnConfirm_click(self):
+        #Підтверджуємо операцію і ховаємо кнопку ??
+        #self.btnConfirm.place_forget()
+        #self.btnConfirm['state'] = 'disabled'
+        self.hide_window()
+        job.setReady() #признак того що закінчили
+
+    def btnAbort_click(self):
+        self.hide_window()
+        job.setAbort() #признак того що закінчили
+
+
+##    def btnReject_click(self):
+##        if sts.IN_BeamSearching:
+##            #Відхиляємо операцію і ховаємо кнопку
+##            self.btnReject.place_forget()
+##            sts.IN_BeamSearching = False
+##            sts.OUT_BeamcenteringComplete = False
+
+
+    #def check_hand_leave(): # Не знаю для чого
+    #    pass
+
+    def editOn(self):
+        sts.IN_NozzleCentering = not sts.IN_NozzleCentering
+        if sts.IN_NozzleCentering:
+            self.btn_edit['relief']=tkinter.SUNKEN
+        else:
+            self.btn_edit['relief']=tkinter.RAISED
+        pass
+
+
+    def GetOrientation(self, x, y, height = 720, indent = 0.1):
+        if (y>0 and (y<indent*height or height-y<indent*height)):
+            return 'V' # vertical line
+        elif (x>0 and (x<indent*height or height-x<indent*height)):
+            return 'H' # horizontal line
+        else: return 'X' # unknown (reserved)
+
+
+    def CheckExist(self, hv, delta = 3):
+        if hv=='H':
+            for key in self.LinesH.keys():
+                if abs(self.y-key)<=delta:
+                    #print('found H line. key='+str(key)+' current='+str(self.y))
+                    return True, key
+        if hv=='V':
+            for key in self.LinesV.keys():
+                if abs(self.x-key)<=delta:
+                    #print('found V line. key='+str(key)+' current='+str(self.x))
+                    return True, key
+        return False, 0
+
+
+
+    def leftclick(self,event):
+        # Saving new line or delete previous
+        x = event.x
+        y = event.y
+
+        #Виставляємо центр сопла через клік
+        if sts.IN_NozzleCentering:
+            cfg.conf['nozzle.x0']=x
+            cfg.conf['nozzle.y0']=y
+
+
+
+        # Calibrating color
+        if sts.IN_BeamCalibrating:
+            print(Service.ExtractPixelHSV(self.frame, x, y)) # !!!!якось дибільно викликати функцію класа через Print
+            self.btn_calibrate['background'] = _from_rgb((sts.beamR,sts.beamG,sts.beamB))
+            return
+
+        if sts.IN_NetModyfing:
+            if self.orientation!='X':
+                exist, key = self.CheckExist(self.orientation)
+                if exist:  # deleting
+                    if self.orientation=='V':
+                        print('delete: LinesV x=' + str(key))
+                        self.LinesV.pop(key, None)
+                        self.canvas['cursor']='tcross'
+                    if self.orientation=='H':
+                        print('delete: LinesH y=' + str(key))
+                        self.LinesH.pop(key, None)
+                        self.canvas['cursor']='tcross'
+                    pass
+                else:      # creating
+                    if self.orientation=='V':
+                        print('LinesV:' + str(self.LinesV))
+                        # Щоб не було однакових значень, зберігаємо не посилання на об`єкт, а його копію.
+                        self.LinesV[x] = self.LineStyle.copy()
+                        self.canvas['cursor']='X_cursor'
+                        print('LinesV:' + str(self.LinesV))
+                    if self.orientation=='H':
+                        print('LinesH:' + str(self.LinesH))
+                        self.LinesH[y] = self.LineStyle.copy()
+                        self.canvas['cursor']='X_cursor'
+                        print('LinesH:' + str(self.LinesH))
+        else:
+            pass
+
+
+    def leftmotion(self, event):
+        self.x, self.y = event.x, event.y
+        #print("x={}, y={}".format(x,y))
+
+        self.orientation=self.GetOrientation(self.x, self.y)
+        # Checking to presence of saved line
+        if self.orientation=='X': # not in zone
+            self.canvas['cursor']='arrow'
+            self.LineLast=''
+        else:
+            result,value=self.CheckExist(self.orientation)
+            if result:
+                self.canvas['cursor']='X_cursor'
+                self.LineLast = str(value)
+            else:
+                self.canvas['cursor']='tcross'
+                self.LineLast = str(event.x) + ',' + str(event.y)
+
+
+    def PageUp(self, event):
+        Service.vid.gain_up()
+
+    def PageDown(self, event):
+        Service.vid.gain_down()
+
+
+    def CtrlF(self, event):
+        if sts.IN_BeamSearching:
+            sts.results.reset()
+        sts.IN_BeamSearching=not(sts.IN_BeamSearching)
+        print(f"find: {sts.IN_BeamSearching}")
+
+    def CtrlR(self, event):
+        sts.IN_NozzleAnalyzingStart = not(sts.IN_NozzleAnalyzingStart)
+        pass
+
+    def CtrlP(self, event):
+        #Service.showparams(self.frame)
+        #print(sts.JSON)
+        #print(queue1.get())
+        pass
+
+
+    def CtrlO(self, event):
+        # replace video by photofile of nozzle
+        #filename = filedialog.askopenfilename(initialdir = os.path.dirname(__file__), filetypes=[("JPG files", "*.jpg")],
+        #defaultextension='jpg', title='Open nozzle image..')
+
+        #if len(filename)>0:
+            # opening file and show it to canvas
+            #img = cv2.imread(filename)
+            # Load an image using OpenCV
+            img = cv2.cvtColor(cv2.imread("d:/___40.jpg"), cv2.COLOR_BGR2RGB)
+            photo = ImageTk.PhotoImage(image = Image.fromarray(img))
+            self.canvas.create_image(0, 0, image = photo, anchor = tkinter.NW)
+            #self.window.update()
+            self.window.mainloop()
+
+    def btnColor_click(self, event):
+        # variable to store hexadecimal code of color
+        color_code = colorchooser.askcolor(title ="Choose color", initialcolor=self.LineStyle['color'])
+        print('color_code '+str(color_code))
+        if color_code!=None:
+            event.widget['background'] = color_code[1]
+            #print('color_code[1] '+str(color_code[1]))
+            self.LineStyle['color'] = color_code[0]
+            #print('color_code[0] '+str(color_code[0]))
+        pass
+
+    def cmbWidth_change(self, event):
+        self.LineStyle['width']=int(event.widget.get())
+        print('width='+str(self.LineStyle['width']))
+        pass
+
+    def cmbTransparency_change(self, event):
+        self.LineStyle['opacity']=event.widget.get()
+
+    def apply(self):
+        # we need to check the difference between old and new
+        #cfg.save_txt(self.text_cfg.get(1.0,tkinter.END)) #saving txt into json file
+
+        tmp=self.text_cfg.get(1.0,tkinter.END) #getting data from
+        res, text = cfg.validate(tmp)
+        if res: # validate and save
+            self.restart() # ok, restart the program with new settings
+        else:
+            tkinter.messagebox.showerror("Error", "JSON is wrong. " + text)
+            self.restore() # make reset to previous (saved) value
+
+
+    def restart(self):
+        #self.vid.cap.release()
+        del Service.vid
+        self.window.destroy()
+        print('restarting..')
+        os.startfile(__file__)    # restart current script
+
+
+    def restore(self):
+        # Reinitilization of program or simple reading of config without initialization
+        self.text_cfg.delete('1.0', tkinter.END)
+        self.text_cfg.insert(tkinter.END, cfg.dumps) # Dictionary -> JSON
+
+
+    def onModification(self, event):
+        #Here we must save settings changes or something else
+
+        #chars = len(event.widget.get("1.0", "end-1c"))
+        #print(chars)
+        #self.text_cfg._resetting_modified_flag = True
+        #label.configure(text="%s chars" % chars)
+
+        #newtext=self.text_cfg.get(1.0,tkinter.END)
+        #newtext=self.text_cfg.get(1.0,'end-1c')+event.char
+        #print(newtext)
+        pass
+
+
+
+    def stop(self):
+        os.system("...")
+        self.finished=True
+
+    def UpKey(self,event):
+        if sts.IN_NozzleCentering:
+            cfg.conf['nozzle.y0']-=1
+    def DownKey(self,event):
+        if sts.IN_NozzleCentering:
+            cfg.conf['nozzle.y0']+=1
+    def LeftKey(self,event):
+        if sts.IN_NozzleCentering:
+            cfg.conf['nozzle.x0']-=1
+    def RightKey(self,event):
+        if sts.IN_NozzleCentering:
+            cfg.conf['nozzle.x0']+=1
+
+
+    def new(self):
+        self.LinesH.clear()
+        self.LinesV.clear()
+
+
+    def open(self):
+        filename = filedialog.askopenfilename(initialdir = os.path.dirname(__file__), filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
+        defaultextension='json', title='Open Profile..')
+        if len(filename)>0:
+            try:
+                if os.path.exists(filename):
+                    with open(filename, 'r') as fp:
+                        Lines = json.load(fp)
+                        LinesH = Lines['LinesH']
+                        self.LinesH = {int(k):v for k,v in LinesH.items()}
+                        LinesV = Lines['LinesV']
+                        self.LinesV = {int(k):v for k,v in LinesV.items()}
+            except:
+                #logger.log('Opening ERROR! ' + w.os.path.basename(filename).split('.')[0])
+                pass
+
+    def save(self):
+        new_name = 'grid_' + datetime.now().strftime("%Y%m%d_%H%M")
+        filename = filedialog.asksaveasfilename(initialdir = os.path.dirname(__file__), filetypes=(("JSON files", "*.json"), ("All files", "*.*")),
+        confirmoverwrite=True, defaultextension='json', initialfile=new_name, title='Save Profile as..')
+        if len(filename)>0:
+            #saving grid's JSON
+            with open(filename, 'w') as fp:
+                Lines = {'LinesH':self.LinesH, 'LinesV':self.LinesV}
+                Service.json.dump(Lines, fp, sort_keys = True)
+            pass
+
+
+
+    def sight(self,event): # Вибираємо сітку для відображення в комбобоксі
+        #self.curr_sight=event.widget.get() # !!! Дуже фігово зроблено - просто витягуємо значення  -це неправильно
+        self.window.focus_set() #Знімаємо фокусування з контрола
+        return
+
+    def calibrate(self):
+        sts.IN_BeamCalibrating = not sts.IN_BeamCalibrating
+        if sts.IN_BeamCalibrating:
+            self.btn_calibrate['relief']=tkinter.SUNKEN
+        else:
+            self.btn_calibrate['relief']=tkinter.RAISED
+        #    event.widget['relief']=tkinter.RAISED
+
+
+    def settings(self):
+        #self.vid.cap.set(cv2.CAP_PROP_SETTINGS, 1) #запуск системних налаштувань
+        Service.vid.run_settings()
+
+
+
+    def update(self):
+        if job.isStart():
+##            if job.isBeamRequest and sts.IN_GuiShow:
+##                #робимо активними кнопки підтвердження
+##                self.btnConfirm['state'] = 'normal'
+##                self.btnAbort['state'] = 'normal'
+##            #elif job.isNozzleRequest:
+##            else:
+##                #робимо неактивними кнопки підтвердження
+##                self.btnConfirm['state'] = 'disabled'
+##                self.btnAbort['state'] = 'disabled'
+            sts.IN_CameraShow = True
+            job.setWork()             # і активуємо робочий режим
+
+
+##        if sts.IN_GuiHide:              #Працює одноразово!
+##            self.hide_window()
+##            #self.close_window()
+##        if sts.IN_GuiShow:              #Працює одноразово!
+##            self.show_window()
+
+##        if sts.IN_CameraReset:
+##            print("camera reset")
+##            sts.IN_CameraReset=False
+##            del Service.vid
+##            Service.vid = Service.MyVideoCapture()
+
+
+        # get an item from the queue without blocking
+        try:
+            item = Service.queue1.get(block=False) #.get_nowait()
+            #print(f'queue extracting: {item}')
+            if item=='Maximize':
+                self.window.state('zoomed')
+                #self.window.attributes("-fullscreen", True)
+            if str(item).startswith('MsgBox'):
+                tkinter.messagebox.showinfo(title='Увага', message=str(item)[6:])
+            if item=='ConfigShow':
+                self.framecfg.pack(side='right', fill='both')
+            if item=='ConfigHide':
+                self.framecfg.pack_forget()
+            if item=='GuiShow':                 self.show_window()
+            if item=='GuiHide':                 self.hide_window()
+            if item=='CameraReset':
+                print("camera reset")
+                del Service.vid
+                Service.vid = Service.MyVideoCapture()
+
+            # тут проблема, ми не знаємо є в нас активна камера чи ні!
+            if item=='CameraCapture':
+                sts.IN_CameraCapture = True
+                #Service.vid.snapshot(sts.IN_CameraCaptureFilePath) #чистий кадр
+                #Service.vid.snapshot() #чистий кадр миттєвий
+
+                # збережений в класі кадр з контурами self.framec зберігаємо в файл
+                #print('seve with contours')
+                #cv2.imwrite("frame-" + time.strftime("%d-%m-%Y-%H-%M-%S") + '_contours.jpg',cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+        except:
+            #print(queue2.get(False))
+            pass
+
+
+        if sts.IN_CameraShow  == False:
+            self.window.after(500, self.update)
+            return
+
+
+        # Get a frame from the video source
+        ret, self.frame = Service.vid.get_frame() #getRGB and croped
+        if ret and sts.OUT_CameraReady: #OK
+            #w=int((self.vid.width-self.vid.height)/2) #left indent
+            h=int(Service.vid.height)
+            #h, self.frame = self.vid.crop_frame(self.frame)
+
+            if job.isBeamRequest() and sts.IN_BeamAuto:
+                frame = Service.FindLaserBeam(self.frame, cfg('BeamHue'), 10)
+            elif job.isNozzleRequest():  #and job.isWorks() - входимо в обробник завжди, а не тільки коли запит активний
+                frame = Service.ExtractContours(self.frame)
+
+            if sts.IN_CameraCapture:
+                sts.IN_CameraCapture = False
+                #Service.vid.snapshot(sts.IN_CameraCaptureFilePath) #чистий кадр
+                Service.vid.snapshot() #чистий кадр
+                Service.cv2.imwrite("frame-" + time.strftime("%d-%m-%Y-%H-%M-%S") + '_contours.jpg',Service.cv2.cvtColor(frame, Service.cv2.COLOR_RGB2BGR))
+
+
+
+            if sts.IN_BeamShowGrid: # or self.showgrid.get()==1:
+                self.img = Image.fromarray(self.frame)
+                self.draw = ImageDraw.Draw(self.img, 'RGBA')
+
+                #print(f'self.sight={self.sight()}')
+                #if self.curr_sight=='Military':
+                if self.cmbSight.get()=='Military':
+                    self.photo = self.OSD_Military(320,8,6,20,12)
+                #if self.curr_sight=='Grid':
+                if self.cmbSight.get()=='Grid':
+                    self.photo = self.OSD_Grid(8,40)
+                #if self.curr_sight=='Center':
+                if self.cmbSight.get()=='Center':
+                    self.photo = self.OSD_Center(cfg.conf['nozzle.zonesize'], cfg.conf['nozzle.x0'], cfg.conf['nozzle.y0'])
+
+                if self.showOn.get()==1:
+                    #self.photo = cv2.addWeighted(self.frame, 0.5, self.src2, 0.5, 0)
+                    #self.photo=PIL.Image.alpha_composite(self.frame, self.src2)
+
+                    for y in self.LinesH:
+                        line = self.LinesH[y]
+                        self.draw.line((0, y, h, y),fill = (*line['color'], line['opacity']), width=line['width'])
+                    for x in self.LinesV:
+                        line = self.LinesV[x]
+                        self.draw.line((x, 0, x, h),fill = (*line['color'], line['opacity']), width=line['width'])
+
+                    if sts.IN_NozzleCentering:
+                        #canvas is not suitable, because of not possible make lines semi trnsparent
+                        #self.canvas.create_line(0,self.y,h,self.y, fill = 'white', width = 2)
+                        #self.canvas.create_text((self.x+40, self.y+16), text=str(self.x)+','+str(self.y), fill='white', font="MSGothic 10 bold")
+                        if self.GetOrientation(self.x, self.y, h, 0.1)=='H':
+                            # We must add line for orientation and Text with (new/old) line coordinate to an image
+                            self.draw.line((0, self.y, h, self.y),fill = (*self.LineStyle['color'], self.LineStyle['opacity']), width=self.LineStyle['width'])
+                            self.draw.text((self.x-4, self.y+20), self.LineLast, fill=(255, 255, 255))
+                        if self.GetOrientation(self.x, self.y, h, 0.1)=='V':
+                            self.draw.line((self.x, 0, self.x, h),fill = (*self.LineStyle['color'], self.LineStyle['opacity']), width=self.LineStyle['width'])
+                            self.draw.text((self.x+20, self.y), self.LineLast, fill=(255, 255, 255))
+
+                    self.photo = ImageTk.PhotoImage(image = self.img)
+
+                self.canvas.create_image(0, 0, image = self.photo, anchor = tkinter.NW)
+            else: # EMPTY
+               self.photo = ImageTk.PhotoImage(image = Image.fromarray(self.frame))
+               self.canvas.create_image(0, 0, image = self.photo, anchor = tkinter.NW)
+        else:
+            if sts.OUT_CameraReady: #була картинка
+                sts.OUT_CameraReady = False #'nocamera')
+                self.canvas.create_image(500, 500, image = self.nocameraimg)
+
+        self.window.after(self.delay, self.update)
+
+    def OSD_Center (self, r, x, y): #треба потім запхати всередину
+        self.draw.ellipse((x-r,y-r,x+r,y+r), fill = (255, 255, 255, 16), outline = (255, 255, 255, 64), width=4)
+        self.draw.ellipse((x-8,y-8,x+8,y+8), fill = (255, 0, 0, 64))
+        #draw.line((0,0,400,400), fill = (0, 255, 0, 32), width=16)
+        self.draw.line((x-1.5*r,y,x-r-1,y),fill = (255, 255, 255, 64), width=4)
+        self.draw.line((x+1.5*r,y,x+r+1,y),fill = (255, 255, 255, 64), width=4)
+        self.draw.line((x,y-1.5*r,x,y-r-1),fill = (255, 255, 255, 64), width=4)
+        self.draw.line((x,y+1.5*r,x,y+r+1),fill = (255, 255, 255, 64), width=4)
+        return  ImageTk.PhotoImage(image = self.img)
+
+    def OSD_Grid(self, n, d): #сітка
+        x=cfg.conf['nozzle.x0'] - (n/2)*d
+        y=cfg.conf['nozzle.y0'] - (n/2)*d
+        for i in range(n+1):
+            self.draw.line((x+i*d,y,x+i*d,y+n*d),fill = (255, 255, 255, 64), width=2)
+            self.draw.line((x,y+i*d,x+n*d,y+i*d),fill = (255, 255, 255, 64), width=2)
+
+        n*=5
+        d/=5
+        for i in range(n+1):
+            self.draw.line((x+i*d,y,x+i*d,y+n*d),fill = (255, 255, 255, 32), width=1)
+            self.draw.line((x,y+i*d,x+n*d,y+i*d),fill = (255, 255, 255, 32), width=1)
+        return  ImageTk.PhotoImage(image = self.img)
+
+    def OSD_Military(self, w, nw, nh, l1, l2): #прицільна сітка
+        h=w/nw*nh
+        dw=w/nw
+        dh=h/nh
+
+        x0=cfg.conf['nozzle.x0']
+        y0=cfg.conf['nozzle.y0']
+
+        x=x0 - w/2
+        y=y0 - l1/2
+        for i in range(nw+1):
+            self.draw.line((x+i*dw,y,x+i*dw,y+l1), fill = (0, 255, 0, 128), width=4)
+        y=y0 - l2/2
+        for i in range(2*nw+1):
+            self.draw.line((x+i*dw/2,y,x+i*dw/2,y+l2), fill = (0, 255, 0, 96), width=2)
+
+        x=x0 - l1/2
+        y=y0 - h/2
+        for i in range(nh+1):
+            self.draw.line((x,y+i*dh,x+l1,y+i*dh), fill = (0, 255, 0, 128), width=4)
+        x=x0 - l2/2
+        for i in range(2*nh+1):
+            self.draw.line((x,y+i*dh/2,x+l2,y+i*dh/2), fill = (0, 255, 0, 96), width=2)
+
+        x=x0 - w/2
+        y=y0
+        self.draw.line((x,y,x+w,y), fill = (0, 255, 0, 96), width=2)
+
+        x=x0
+        y=y0 - h/2
+        self.draw.line((x,y,x,y+h), fill = (0, 255, 0, 96), width=2)
+        return  ImageTk.PhotoImage(image = self.img)
+
+
+
+
+def main():
+    # Create a window and pass it to the Application object
+    print('Starting GUI')
+    Z = App(tkinter.Tk(), "NozzleAnalyzer")
+
+
+def stop():
+    pass
+
+
+
+cfg = Service.cfg
+sts = Service.sts
+job = Service.job
+
+if __name__ == "__main__":
+    main()
+

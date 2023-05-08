@@ -1,0 +1,355 @@
+from jsonrpcserver import method, Result, Success, serve, dispatch, request, Error, InvalidParams
+import os, threading, sys
+
+from Main import main as GUI_launch
+from Service import queue1, ExtractScale, sts, cfg, job, vid
+
+import pystray
+import PIL
+import json
+import time
+
+
+SCode = '0' #!!таке шось, треба одбудмати логіку, що нам повертати якщо це запит без аналізу
+StartTime=time.time()
+semaphore_file = "lock.txt"
+
+
+
+# формуємо повний рядок відповіді Result
+def FinalizeJob():
+    job.TimerFinish()
+
+    result={}
+    result['job_state'] = job.state
+
+    if job.isIdle():
+        request.info = "NO request started yet"
+    elif job.isWork():
+        request.info = job.Name + " still working"
+    elif job.isReady():
+        request.info = job.Name + " is Ready"
+    elif job.isAbort():
+        request.info = job.Name + " Abort"
+    else:
+        request.info = job.Name + " indefinite"
+    result['job_info'] = request.info
+    result['job_name'] = job.Name
+    result['job_id'] = job.Request
+
+
+    if job.state in (job.Abort,job.Ready): # якщо закінчили - готовимо результати і скидаємо операцію
+        if job.Request in (job.RequestBeamAUTO, job.RequestBeamMANUAL):
+            if sts.IN_BeamAuto:
+                result['Centered'] = sts.OUT_BeamCentered
+                result['Dx'] = sts.OUT_BeamDX
+                result['Dy'] = sts.OUT_BeamDY
+        if job.Request ==job.RequestNozzle:
+            result['Outer'] = sts.OUT_NozzleOuterCircularity
+            result['Inner'] = sts.OUT_NozzleInnerCircularity
+            result['Delta'] = sts.OUT_NozzleDelta
+            result['OuterDiameterPX'] = sts.OUT_NozzleOuterDiameterPX
+            result['InnerDiameterPX'] = sts.OUT_NozzleInnerDiameterPX
+            result['InnerDiameterMM'] = sts.OUT_NozzleInnerDiameterMM
+
+            result['OuterStatus'] = GetNozzleStatus(cfg('CircNewMin'),cfg('CircGoodMinOuter'), sts.OUT_NozzleOuterCircularity)
+            result['InnerStatus'] = GetNozzleStatus(cfg('CircNewMin'),cfg('CircGoodMinInner'), sts.OUT_NozzleInnerCircularity)
+
+            #Diameter
+            #Material
+        job.setIdle()
+    return result
+
+
+def sts_reset():
+    sts.reset()
+    #sts.IN_BeamAuto=False
+    #sts.IN_BeamShowGrid = False
+    #sts.OUT_BeamCentered = False
+    #sts.OUT_
+
+
+@method
+def CamReady() -> Result:
+    #dispatch('{"jsonrpc": "2.0", "name": "hello", "params": ["July"]  "id": 2}')
+    if sts.OUT_CameraReady:
+        return Success(SCode)
+    else:
+        return Error(-1,"Camera not initialized", "Camera initializition error, check the USB cable") #camera is not initialized
+
+@method
+def CamReset() -> Result:
+    if not sts.IN_CameraReset:
+        sts.IN_CameraReset = True
+        return Success(SCode)
+    else:
+        return Error(-1,"Camera already reseting", "Allways reset camera") #камера
+
+@method
+def CamCapture(FilePath: str = None) -> Result:
+    vid.snapshot(FilePath)
+    return Success(SCode)
+
+
+
+# Зберігаємо коефіцієнт - кількість пікселів на 1 мм
+@method
+def Calibrate(nozzlesize: float)->Result:
+    # записуємо коефіцієнт значення піксель/мм
+    # коефіцієнт - це діаметр описаного кола відносно внтуршнього отвору / %nozzlesize
+
+    if sts.OUT_NozzleInnerCircularity>0.95 and sts.OUT_NozzleInnerDiameterPX > 16:
+        cfg.conf['scalecoeff'] = sts.OUT_NozzleInnerDiameterPX / nozzlesize
+        return Success(SCode)
+    else:
+        return Error(-4,'Scale calibration error','Scale calibration error. Nozzle hole is not round enough')
+
+
+@method
+def NozzleAnalyze(material: int, nozzletype: int, show : bool = True)->Result:
+    ret, error_text = CheckError()
+    if ret: return error_text
+
+    sts_reset()
+    ErrorStr=""
+    if material not in (1, 2, None):
+            ErrorStr+="Material must be 1 (nickel), 2 (copper) or null. "
+    if nozzletype not in (1, 2, None):
+            ErrorStr+="Nozzletype must be 1, 2 or null. "
+    if len(ErrorStr)>0:
+        return InvalidParams(ErrorStr)
+
+    #setting cam settings
+    vid.LoadParamsFromFile('CamNozzle.json')
+
+    if show:
+        sts.GuiNoWait = False
+        GuiShow()
+    else:
+        sts.GuiNoWait = True
+        #GuiHide()
+
+    job.setStart(job.RequestNozzle,4)
+    return Success(job.statejson)
+
+
+#Auto - знаходити промінь і підсвічувати його зеленим чи червоним колом навколо
+#BeamAuto - знаходити промінь і підсвічувати його зеленим чи червоним коло навколо
+#Show - показувати морду чи ні
+#Grid - показувати останню сітку чи ні
+@method
+def BeamAnalyze(Auto : bool = None, Grid : bool = None, Show : bool = True)->Result:
+    #print(dispatch(request, deserializer=ujson.loads))
+    print('BeamAnalyze')
+
+    ret, error_text = CheckError()
+    if ret: return error_text
+
+    sts_reset()
+    ErrorStr=""
+    if Auto not in (False, True, None):
+            ErrorStr+="'auto' must be Boolean.\n"
+    if Grid not in (False, True, None):
+            ErrorStr+="'grid' must be Boolean.\n"
+    if Show not in (False, True, None):
+            ErrorStr+="'show' must be Boolean.\n"
+    if len(ErrorStr)>0:
+        return InvalidParams(ErrorStr)
+
+
+
+    if job.state!=job.Work:
+        #setting cam settings
+        vid.LoadParamsFromFile('CamBeam.json')
+
+        if Auto:        sts.IN_BeamAuto=Auto
+        else:           sts.IN_BeamAuto=False
+        if Grid:        sts.IN_BeamShowGrid = True
+        else:           sts.IN_BeamShowGrid = False
+
+        if Show:
+            sts.GuiNoWait = False
+            GuiShow()
+            job.setStart(job.RequestBeamMANUAL,60)
+        else:
+            sts.GuiNoWait = True
+            #GuiHide()
+            job.setStart(job.RequestBeamAUTO,2)
+
+    elif job.isWork:
+        return Success(job.statejson) #вже працюємо, треба повернути код що операція активна
+
+    return Success(job.statejson)
+
+#@method
+def CheckError()->Result:
+    err_exist = not(sts.OUT_CameraReady) # or
+    return err_exist, Error(-1,"Camera not initialized", "Camera initializition error, check the USB cable") #camera is not initialized
+
+
+@method
+def AnalyzeResult()->Result:
+    ret, error_response = CheckError()
+    if ret: return error_text
+
+    if not(sts.OUT_CameraReady):
+        print(f"sts.OUT_CameraReady = {sts.OUT_CameraReady}")
+        return Error(-1,"Camera not initialized", "Camera initializition error, check the USB cable") #camera is not initialized
+    else:
+        #z=Success(FinalizeJob())
+        #print(z)
+        #return z
+        return Success(FinalizeJob())
+
+
+
+@method
+def ConfigShow()->Result:
+    queue1.put('ConfigShow')  #Мені дуже не подобається це, треба знайти нормальний спосіб напряму пробиватися к екземпляру об'єкта
+    return Success(SCode)
+
+@method
+def ConfigHide()->Result:
+    queue1.put('ConfigHide')  #Мені дуже не подобається це, треба знайти нормальний спосіб напряму пробиватися к екземпляру об'єкта
+    return Success(SCode)
+
+
+
+@method
+def GuiShow()->Result:
+    print('GuiShow')
+    #sts.IN_GuiShow = True
+    #sts.IN_GuiHide = False
+    queue1.put('GuiShow')
+    return Success(SCode)
+
+@method
+def GuiShowClick()->Result:
+    GuiShow()
+    return Success(SCode)
+
+@method
+def ParamsAll()->Result:
+    return Success(sts.JSON)
+
+
+@method
+def GuiMaximize()->Result:
+    queue1.put('Maximize')  #Мені дуже не подобається це, треба знайти нормальний спосіб напряму пробиватися к екземпляру об'єкта
+    return Success(SCode)
+
+@method
+def GuiStatus()->Result: #повертаємо статус вікна
+    return Success(SCode)
+
+
+@method
+def GuiHide()->Result:
+    queue1.put('GuiHide')
+    return Success(SCode)
+
+
+@method
+def MsgBox(text: str)->Result:
+    print(text)
+    queue1.put('MsgBox ' + str(text))
+    return Success(SCode)
+
+
+@method
+def StopAll()->Result:
+    print('Stop GUI and Server')
+    Exit()
+    return Success(SCode) #never happened
+
+
+@method
+def GuiStart()->Result:
+    # Запускаємо GUI з під сервера в окремому потоці
+    GUI = threading.Thread(target=GUI_launch)
+    GUI.start()
+    return Success(SCode)
+
+
+def SystemExit():
+    print("Stop JSON-RPC server and GUI")
+    #zero = threading.Thread(target=stop)
+    #zero.start()
+    icon.stop() #Глушимо іконку
+    #sys.exit() #!!!Глушимо по злому JSON-RPC сервер - це неправильно
+
+    if os.path.exists(semaphore_file):
+      os.remove(semaphore_file)
+      #print(f"{file_path} was deleted.")
+    else:
+      #print(f"{file_path} does not exist.")
+    os._exit(1)
+
+
+@method
+def SystemReset() -> Result:
+    return Success(SCode)
+
+@method
+def demo(num: int) -> Result:
+    # Dispatch виконує запит всередині сервера і повертає текст відповіді
+    print(num)
+    if num>0:
+        return Success(dispatch('{"jsonrpc": "2.0", "method": "ping", "id": 1}'))
+    else:
+        #return Error(1, f"num={num} is too small")
+        return Success("Good")
+
+
+@method
+def ping() -> Result:
+    return Success(SCode)
+
+
+
+def GetNozzleStatus(CircNewMin : float, CircGoodMin: float, value: float):
+    if value >= CircNewMin:
+        return 'NEW' #1
+    elif value >= CircGoodMin:
+        return 'GOOD' #0
+    elif value >= 0.1:
+        return 'BAD' #-1
+    else:
+        return 'NONE'
+
+
+
+try:
+    # Try to create the semaphore file
+    open(semaphore_file, "x").close()
+except FileExistsError:
+    # The semaphore file already exists, meaning another instance is running
+    sys.exit()
+
+
+# determine if application is a script file or frozen exe
+if getattr(sys, 'frozen', False):
+    application_path = os.path.dirname(os.path.realpath(sys.executable))
+    print('Frozen script')
+elif __file__:
+    application_path = os.path.dirname(__file__)
+    print('Live script')
+
+print('Starting JSON-RPC server')
+SEPARATOR = pystray.MenuItem('- - - -', None)
+print(os.getcwd())
+#image = PIL.Image.open(application_path + "/laser2.png")
+image = PIL.Image.open("laser2.png")
+menu = (pystray.MenuItem('Show GUI', action=GuiShowClick, default=True),
+        pystray.MenuItem(SEPARATOR, None),
+        pystray.MenuItem('Stop && Exit ', SystemExit),)
+icon = pystray.Icon("test", image, "Nozzle Analyzer", menu)
+#icon.title="New title for icon"
+
+if __name__ == "__main__":
+    icon.run_detached()
+    GuiStart()
+    serve(port=6000)
+
+
+
