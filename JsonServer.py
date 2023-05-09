@@ -263,8 +263,7 @@ elif __file__:
 print('Starting JSON-RPC server')
 SEPARATOR = pystray.MenuItem('- - - -', None)
 print(os.getcwd())
-#image = PIL.Image.open(application_path + "/laser2.png")
-image = PIL.Image.open("laser2.png")
+image = PIL.Image.open("IMG\laser.png")
 menu = (pystray.MenuItem('Config', action=GuiShowConfig, default=False),
         pystray.MenuItem('Show GUI', action=GuiShowClick, default=True),
         pystray.MenuItem(SEPARATOR, None),

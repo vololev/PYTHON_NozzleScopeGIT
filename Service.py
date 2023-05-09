@@ -19,7 +19,7 @@ class MyVideoCapture:
         self.cap = cv2.VideoCapture(CamNum, cv2.CAP_DSHOW)
         if self.cap.isOpened():
             # завантажуємо налаштування камери з словаря settings
-            self.LoadParamsFromFile('CamGeneral.json')
+            self.LoadParamsFromFile('CONF\CamGeneral.json')
 
             # Зчитуємо фактичні ширину і висоту з камери. Зберігаємо їх в власну змінну  and save it to internal variables
             self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -212,18 +212,21 @@ class Config:
         self.conf = {**self.conf, **tmp}
 
     def read_cfg(self):
-        if os.path.exists('config.json'):
-            with open('config.json', 'r') as fp:
+        path='CONF\config.json'
+        if os.path.exists(path):
+            with open(path, 'r') as fp:
                 return json.load(fp)
         else:
             return self.conf_default
     def save_cfg(self):
+        path='CONF\config.json'
         print('save_cfg')
-        with open('config.json', 'w') as fp:
+        with open(path, 'w') as fp:
             json.dump(self.conf, fp, sort_keys = True)
     def save_txt(self, text):
+        path='conf\config.json'
         print('save_txt')
-        with open('config.json', 'w') as fp:
+        with open(path, 'w') as fp:
             fp.write(text)
         pass
 
@@ -786,7 +789,7 @@ def NozzleAnalyzeStart(material: int, nozzletype: int):
 
 
     sts.res_contours.clear()
-    vid.LoadParamsFromFile('CamNozzle.json') #setting cam settings
+    vid.LoadParamsFromFile('conf\CamNozzle.json') #setting cam settings
     job.setStart(job.RequestNozzle,4)
     return True, job.statejson
 
@@ -808,7 +811,7 @@ def BeamAnalyzeStart(Auto : bool = None, Grid : bool = None, Show : bool = True)
         return False, ErrorStr
         #return InvalidParams(ErrorStr)
 
-    vid.LoadParamsFromFile('CamBeam.json')
+    vid.LoadParamsFromFile('conf\CamBeam.json')
     if Auto:        sts.IN_BeamAuto=True
     else:           sts.IN_BeamAuto=False
     if Grid:        sts.IN_BeamShowGrid = True

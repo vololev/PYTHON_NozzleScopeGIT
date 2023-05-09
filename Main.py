@@ -67,7 +67,7 @@ class App:
         pass
     def __init__(self, window, window_title):
         self.SetNoCamera = False
-        self.nocameraimg = ImageTk.PhotoImage(Image.open("pngfind.com-not-allowed-symbol-png-5982091_256_inverted.png")) # no-camera image
+        self.nocameraimg = ImageTk.PhotoImage(Image.open("IMG\nocamera.png")) # no-camera image
         self.gridslist = ['Center','Grid', 'Military']
 
         # create a larger font
@@ -956,6 +956,5 @@ sts = Service.sts
 job = Service.job
 
 if __name__ == "__main__":
-    print("start")
     main()
 
