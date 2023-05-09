@@ -224,7 +224,7 @@ class Config:
         with open(path, 'w') as fp:
             json.dump(self.conf, fp, sort_keys = True)
     def save_txt(self, text):
-        path='conf\config.json'
+        path='CONF\config.json'
         print('save_txt')
         with open(path, 'w') as fp:
             fp.write(text)
@@ -789,7 +789,7 @@ def NozzleAnalyzeStart(material: int, nozzletype: int):
 
 
     sts.res_contours.clear()
-    vid.LoadParamsFromFile('conf\CamNozzle.json') #setting cam settings
+    vid.LoadParamsFromFile('CONF\CamNozzle.json') #setting cam settings
     job.setStart(job.RequestNozzle,4)
     return True, job.statejson
 
@@ -811,7 +811,7 @@ def BeamAnalyzeStart(Auto : bool = None, Grid : bool = None, Show : bool = True)
         return False, ErrorStr
         #return InvalidParams(ErrorStr)
 
-    vid.LoadParamsFromFile('conf\CamBeam.json')
+    vid.LoadParamsFromFile('CONF\CamBeam.json')
     if Auto:        sts.IN_BeamAuto=True
     else:           sts.IN_BeamAuto=False
     if Grid:        sts.IN_BeamShowGrid = True

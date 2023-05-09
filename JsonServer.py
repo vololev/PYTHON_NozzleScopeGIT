@@ -53,10 +53,10 @@ def Calibrate(nozzlesize: float)->Result:
             c=cfg.conf['nozzle.y0'] = root['InnerY0'] + cfg.conf['crop.top']
             print(f'Calibrated. Scale={a}, Z0:({b},{c})')
             return Success(SCode)
-    else:
-        error = response_dict["error"]
-##        return Error(-4,'Scale calibration error','Scale calibration error. Nozzle hole is not round enough')
-        return error
+
+    ##error = response_dict["error"]
+    return Error(-16,'Scale calibration error','Scale/zero calibration error. Nozzle hole is not round enough')
+    #return error
 
 
 def Wait4Result(stoptime):

@@ -67,14 +67,12 @@ class App:
         pass
     def __init__(self, window, window_title):
         self.SetNoCamera = False
-        self.nocameraimg = ImageTk.PhotoImage(Image.open("IMG\nocamera.png")) # no-camera image
         self.gridslist = ['Center','Grid', 'Military']
 
         # create a larger font
         self.megafont = Font(family="Helvetica", size=26, weight='bold')
         self.bigfont = Font(family="Helvetica", size=16, weight='bold')
         self.mediumfont = Font(family="Arial Narrow", size=12, weight='bold')
-
 
         self.x=0
         self.y=0
@@ -83,7 +81,6 @@ class App:
         self.LineLast=''
         self.LinesH={} # horizontal
         self.LinesV={} # vertical
-
 
         window.attributes('-toolwindow', True)
         #window.protocol("WM_DELETE_WINDOW", self.close_window)
@@ -872,7 +869,6 @@ class App:
                 self.canvas.config(width=size, height=size)
                 # Draw a dark gray rectangle that covers the entire canvas
                 self.canvas.create_rectangle(0, 0, size, size, fill='#333333')
-                #nocamera = self.canvas.create_image(0, 0, image = self.nocameraimg)
                 nocamera = self.canvas.create_text(0, 0, text="NO CAMERA!", fill="red", font = self.megafont)
 
                 y = x = size / 2                                     # Calculate the center position
