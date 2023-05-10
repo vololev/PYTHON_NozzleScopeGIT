@@ -15,6 +15,7 @@ class MyVideoCapture:
     def __init__(self, CamNum):
         # Open the video source
         self.camid=CamNum
+        self.Ready = False
         print("Camera initialization")
         self.cap = cv2.VideoCapture(CamNum, cv2.CAP_DSHOW)
         if self.cap.isOpened():
@@ -24,13 +25,11 @@ class MyVideoCapture:
             # Зчитуємо фактичні ширину і висоту з камери. Зберігаємо їх в власну змінну  and save it to internal variables
             self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
             self.Ready = True
             print(f"Camera #{cfg('cam.selected')} initialization complete")
         else: #Якщо не змогли отримати зображення з камери
             self.width = 640
             self.height = 480
-            self.isReady = False
             print(f"Camera #{cfg('cam.selected')} initialization FAILED!")
 
 
@@ -41,15 +40,12 @@ class MyVideoCapture:
 
     def shutdown(self):
         print("Camera shutdown..")
-        self.isReady = False
+        self.Ready = False
         try:
             self.cap.release()
         except:
             print('cap is None')
 
-
-    def isReady(self):
-        return self.Ready == True
 
     def LoadParamsFromFile(self, path: str):
         #відкриваємо файл з додатковими налаштуваннями для камери
@@ -126,14 +122,25 @@ class MyVideoCapture:
         pass
 
     def get_frame(self, croped: bool):
+        if not self.isReady():
+            return (False, None)
+
         if not self.cap.isOpened():
+            self.Ready=False
+            print('cap.isOpened() ERROR')
             return (False, None)
 
         if not self.cap.grab():
+            self.Ready=False
+            print('cap.grab() ERROR')
             return (False, None)
 
-        ret, frame = self.cap.read()
-        if not(ret): return (False, None)
+        #ret, frame = self.cap.retrieve()  # decode the grabbed frame captured by cap.grab(). !!Don't work after CamReset()!
+        ret, frame = self.cap.read() #SLOW READING FRAME
+        if not(ret):
+            self.Ready=False
+            print('cap.read() ERROR')
+            return (False, None)
 
         if croped:
             frame = frame[cfg('crop.top'):cfg('crop.top')+cfg('crop.size'),cfg('crop.left'):cfg('crop.left')+cfg('crop.size')] #croping
@@ -144,12 +151,15 @@ class MyVideoCapture:
             cv2.rotate(frame, cv2.ROTATE_180, frame)
         elif cfg('cam.rotation')==270:
             cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE, frame)
-        return (ret, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)) #if cam.init() - error
+        return (ret, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
+
+    def isReady(self):
+        return self.Ready
 
     def CamReady(self):
         if self.cap.isOpened():
-            ret, frame = self.cap.read()
+            ret, _ = self.cap.read()
             return ret
         return False
 

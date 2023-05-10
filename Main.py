@@ -809,7 +809,6 @@ class App:
                 self.frame = Service.ExtractContours(self.frame)
 
             if job.isReady():
-                data = {"name": "John", "age": 30, "city": "New York"}
                 self.frame = Service.CreateOSD(self.frame, job.result, ['job_name','InnerStatus','OuterStatus','InnerDiameterMM'], 0.05, 0.8, 0.6, 0.95, align='left')
 
             if sts.IN_CameraCapture and job.isReady():
@@ -856,15 +855,12 @@ class App:
 ##                            self.draw.line((self.x, 0, self.x, h),fill = (*self.LineStyle['color'], self.LineStyle['opacity']), width=self.LineStyle['width'])
 ##                            self.draw.text((self.x+20, self.y), self.LineLast, fill=(255, 255, 255))
 ##                    self.photo = ImageTk.PhotoImage(image = self.img)
-
-                self.canvas.create_image(0, 0, image = self.photo, anchor = tk.NW)
             else: # Without grid
-               self.photo = ImageTk.PhotoImage(image = Image.fromarray(self.frame))
-               self.canvas.create_image(0, 0, image = self.photo, anchor = tk.NW)
+                self.photo = ImageTk.PhotoImage(image = Image.fromarray(self.frame))
+            self.canvas.create_image(0, 0, image = self.photo, anchor = tk.NW)
         else:
             if not(self.SetNoCamera):
                 self.SetNoCamera=True
-                #Service.vid.isReady = False
                 size=cfg('crop.size')
                 self.canvas.config(width=size, height=size)
                 # Draw a dark gray rectangle that covers the entire canvas
@@ -874,7 +870,6 @@ class App:
                 y = x = size / 2                                     # Calculate the center position
                 self.canvas.itemconfigure(nocamera, anchor="center") # Set the text anchor to the center
                 self.canvas.move(nocamera, x, y) # Move to the center
-
 
         self.window.after(self.delay, self.update)
 

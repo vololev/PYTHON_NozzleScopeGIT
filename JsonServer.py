@@ -1,4 +1,9 @@
-﻿from jsonrpcserver import method, Result, Success, serve, dispatch, request, Error, InvalidParams
+﻿"""
+This module create JSON-RPC Server
+"""
+
+
+from jsonrpcserver import method, Result, Success, serve, dispatch, request, Error, InvalidParams
 import os, threading, sys
 
 from Main import main as GUI_launch
@@ -42,6 +47,8 @@ def Calibrate(nozzlesize: float)->Result:
 
     # Dispatch виконує запит всередині сервера і повертає текст відповіді
     response_str = dispatch('{"jsonrpc": "2.0", "method": "RunNozzleAnalyze", "params": [1,1],  "id": 1}')
+
+    print('response_str', response_str)
 
     # Convert the JSON response string to a Python dictionary
     response_dict = json.loads(response_str)
@@ -122,7 +129,7 @@ def RunBeamCentering()->Result:
 
 # Якщо шось не так - тут створюємо помилку
 def CheckError()->Result:
-    err_exist = not(vid.isReady)
+    err_exist = not(vid.isReady())
     if err_exist:
         return err_exist, Error(-1,"Camera not initialized", "Camera initializition error, check the USB cable") #camera is not initialized
     else:
