@@ -620,7 +620,6 @@ def ExtractContours(frame):
     color=((0, 0, 255), (0, 255, 0))
     im1 = frame
 
-    NeedSnapShot = False
     if sts.results.isFull() and job.isWork(): #Черга заповнена, робимо підрахунки результата
         res = sts.results.jsonresult()
         # ЯКОСЬ ВСЕ НЕ ДУЖЕ ПОДОБАЄТЬСЯ
@@ -634,9 +633,10 @@ def ExtractContours(frame):
         sts.OUT_NozzleInnerY0          = sts.results.lastavg[6]
 
         print(f'sts.OUT_NozzleOuterDiameterPX={sts.OUT_NozzleOuterDiameterPX} frame_x={frame.shape[0]}')
-
+        outer_index=sts.OUT_NozzleOuterDiameterPX / frame.shape[0]
         if max(sts.OUT_NozzleInnerCircularity, sts.OUT_NozzleOuterCircularity)<0.2 or \
-            sts.OUT_NozzleOuterDiameterPX > frame.shape[0]*0.95:
+            outer_index>0.95:
+            print('OuterDiameter =', int(outer_index*100),'% of frame')
             sts.OUT_NozzleExists = False
         else:
             sts.OUT_NozzleExists = True
@@ -652,15 +652,16 @@ def ExtractContours(frame):
     #hsv нам неогбхідне щоб потім можна було розібрати який колір сопла
     hsv  = cv2.cvtColor(im1, cv2.COLOR_BGR2HSV_FULL) #перетворюємо в модель HSV (тон насиченість яскравість)
     h, s, v = cv2.split(hsv)                        #розділяємо на три матриці
-    imgray2 = v
-    #imgray2 = cv2.cvtColor(im1, cv2.COLOR_BGR2GRAY)
+
+    imgray = v
+    #imgray = cv2.cvtColor(im1, cv2.COLOR_BGR2GRAY)
 
     # ЗАДАЄМО ПАРАМЕТРИ ПОШУКУ
-    ret, thresh = cv2.threshold(imgray2, 150, 200, cv2.THRESH_BINARY)
-    #ret, thresh = cv2.threshold(imgray2, 150, 200, cv2.THRESH_BINARY_INV)
-    #ret, thresh = cv2.adaptiveThreshold(imgray2, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,2)
+    ret, thresh = cv2.threshold(imgray, 150, 200, cv2.THRESH_BINARY)
+    #ret, thresh = cv2.threshold(imgray, 150, 200, cv2.THRESH_BINARY_INV)
+    #ret, thresh = cv2.adaptiveThreshold(imgray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,2)
 
-    #imgray2 = cv2.equalizeHist(thresh)
+    #imgray = cv2.equalizeHist(thresh)
 
     # ЗНАХОДИМО КОНТУРИ
     #cv2.RETR_TREE - дерево усіх, RETR_EXTERNAL - тільки зовнішні
@@ -852,7 +853,7 @@ def GetNozzleStatus(CircNewMin : float, CircGoodMin: float, value: float):
         return 'NOT FOUND', 0
 
 
-def snapshot(manual = False, name = None, readyframe = None):
+def snapshot(manual = False, name = None, readyframe = None, bwframe = None):
     if not manual and not cfg('autoshots'):
         return
 
@@ -866,9 +867,19 @@ def snapshot(manual = False, name = None, readyframe = None):
 
     if ret: #OK
         cv2.imwrite(prefix + "-rawframe.jpg", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        #saving threshed
+        imgray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        ret, thresh = cv2.threshold(imgray, 150, 200, cv2.THRESH_BINARY)
+        if ret:
+            cv2.imwrite(prefix + "-bw.png", thresh)
+
+
 
     if readyframe is not None:
         cv2.imwrite(prefix + '-artframe.jpg', cv2.cvtColor(readyframe, cv2.COLOR_RGB2BGR))
+
+
+
 
 
 def CreateOSD(image, data, keys, left, top, right, bottom, align="center"):

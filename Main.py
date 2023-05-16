@@ -161,7 +161,7 @@ class App:
         #self.btn_snapshot.pack(anchor=tk.CENTER, expand=True)
         btn_analyze.pack(side='left', padx=8, pady=8)
 
-        btn_clearresults=tk.Button(actions_frame, text="Clear\nresults", width=10)
+        btn_clearresults=tk.Button(actions_frame, text="Clear\nresults", width=10, command = self.clearresults_click)
         #self.btn_snapshot.pack(anchor=tk.CENTER, expand=True)
         btn_clearresults.pack(side='left', padx=8, pady=8)
 
@@ -314,6 +314,11 @@ class App:
         self.delay = 100
         self.update()
         self.window.mainloop()
+
+
+    def clearresults_click(self):
+        Service.job.setIdle()
+
 
     def analyze_click(self):
         start_ok, start_result = Service.NozzleAnalyzeStart(1, 1)
