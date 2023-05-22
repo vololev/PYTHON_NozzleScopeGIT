@@ -973,8 +973,8 @@ job = CommandStatus() #статус останньої операції
 # створюємо і запускаємо відео (клас роботи з вебкамерою)
 vid = MyVideoCapture(cfg('cam.selected'))
 
-#frameArt = None
-frameRaw = None
+# Global flag to signal threads to stop
+stop_threads = False
 
 if __name__ == '__main__':
     main()

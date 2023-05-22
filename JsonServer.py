@@ -4,10 +4,11 @@ This module create JSON-RPC Server
 
 
 from jsonrpcserver import method, Result, Success, serve, dispatch, request, Error, InvalidParams
-import os, threading, sys
+import os, sys
+import concurrent.futures
 
 from Main import main as GUI_launch
-from Service import queue1, ExtractScale, sts, cfg, job, vid, NozzleAnalyzeStart, BeamAnalyzeStart, snapshot
+from Service import queue1, ExtractScale, sts, cfg, job, vid, NozzleAnalyzeStart, BeamAnalyzeStart, snapshot, stop_threads
 
 import pystray
 import PIL
@@ -47,8 +48,6 @@ def Calibrate(nozzlesize: float)->Result:
 
     # Dispatch виконує запит всередині сервера і повертає текст відповіді
     response_str = dispatch('{"jsonrpc": "2.0", "method": "RunNozzleAnalyze", "params": [1,1],  "id": 1}')
-
-    print('response_str', response_str)
 
     # Convert the JSON response string to a Python dictionary
     response_dict = json.loads(response_str)
@@ -204,54 +203,50 @@ def StopAll()->Result:
     return Success(SCode) #never happened
 
 
-@method
-def GuiStart()->Result:
-    global GUI
-    # Запускаємо GUI з під сервера в окремому потоці
-    GUI = threading.Thread(target=GUI_launch)
-    GUI.start()
-    return Success(SCode)
+##@method
+##def GuiStart()->Result:
+##    GUI = threading.Thread(target=GUI_launch)
+##    GUI.start()
+##    return Success(SCode)
 
 
 def SystemExit():
-##    if os.path.exists(lockfile):
-##      os.remove(lockfile)
-
-    global GUI
-    print("Stop JSON-RPC server and GUI")
     cfg.save_cfg()
 
+    queue1.put('GuiStop')
+    # To close all threads, cancel all the submitted tasks
+    #GUI.cancel()
+    print("Stop GUI")
+
     icon.stop() #Глушимо іконку
+    print("Stop icon")
+
     #del vid #правильно видаляємо об'єкт камери, обробник всередині
     vid.shutdown() #використовуємо це, бо якщо del vid - далі не йдемо
-    #GUI._stop()
 
-    # Call the garbage collector to destroy the object
-    import gc
-    gc.collect()
+##    # Call the garbage collector to destroy the object
+##    import gc
+##    gc.collect()
 
-    print('Total shutdown')
-    #sys.exit() #!!ПОКИ ЩО НЕ ПРАЦЮЄ, ТРЕБА РОБИТИ ЗАГЛУШЕННЯ ДОЧІРНІХ threads
-    os._exit(1) # Працюємо як рубильник
+    # Shutdown the executor, allowing running threads to finish
+    executor.shutdown(wait=True)
+    print("All threads have been closed. Total shutdown")
+
+    #server.shutdown()
+    #print("Stop JSON-RPC server")
+
+    sys.exit(1) #!!ПОКИ ЩО НЕ ПРАЦЮЄ, ТРЕБА РОБИТИ ЗАГЛУШЕННЯ ДОЧІРНІХ threads
+    #os._exit(1) # Працюємо як рубильник
+
+
 
 
 @method
 def ping() -> Result:
     return Success(SCode)
 
-##def remove_lock_file():
-##    if os.path.exists(lockfile):
-##        os.remove(lockfile)
-
-
-##try: # Створюємо файл захисту від подвійного запуску
-##    open(lockfile, "x").close()
-##except FileExistsError:     # Файл існує - виходимо
-##    #sys.exit(1)
-##    os._exit(1)
-##
-### Register the remove_lock_file function to be called on exit
-##atexit.register(remove_lock_file)
+# Create a ThreadPoolExecutor
+executor = concurrent.futures.ThreadPoolExecutor()
 
 # determine if application is a script file or frozen exe
 if getattr(sys, 'frozen', False):
@@ -267,7 +262,6 @@ elif __file__:
     print('Live script')
     application_path = os.path.dirname(__file__)
 
-print('Starting JSON-RPC server')
 SEPARATOR = pystray.MenuItem('- - - -', None)
 print(os.getcwd())
 image = PIL.Image.open("IMG\laser.png")
@@ -280,5 +274,11 @@ icon = pystray.Icon("test", image, "Nozzle Analyzer", menu)
 
 if __name__ == "__main__":
     icon.run_detached()
-    GuiStart()
+
+    # Submit tasks to the executor and store the returned Future objects
+    GUI = executor.submit(GUI_launch) #, args1)
+
+    # Start the JSON-RPC server
+    #server = serve(port=6000) #Це не працює - метод serve не залишає посилання на об'єкт сервера!!!
     serve(port=6000)
+    #print('Starting JSON-RPC server')

@@ -1,6 +1,5 @@
 ﻿import Service
 
-import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, colorchooser, messagebox
 from tkinter.tix import *
@@ -153,8 +152,10 @@ class App:
 
 
         # Button to take a snapshot
-        btn_snapshot=tk.Button(actions_frame, text="Camera\nsnapshot", width=10, command=Service.snapshot)
-        btn_snapshot.pack(side='left', padx=5, pady=5)
+        btn_screenshot=tk.Button(actions_frame, text="ScreenShot", width=10, command=Service.snapshot)
+        #btn_screenshot=tk.Button(actions_frame, text="ScreenShot", width=10, command=self.screenshot_click)
+        #btn_snapshot=tk.Button(actions_frame, text="Camera\nsnapshot", width=10, command=lambda: Service.snapshot(readyframe=self.canvas_image()))
+        btn_screenshot.pack(side='left', padx=5, pady=5)
 
         # Button to launch Nozzle analyze AUTO
         btn_analyze=tk.Button(actions_frame, text="Nozzle\nAnalyze", width=10, command = self.analyze_click)
@@ -313,8 +314,21 @@ class App:
         # Після першого запуску, метод "update", буде автоматично запускатися кожні delay мс. 100мс = 10fps
         self.delay = 100
         self.update()
+
+        # Start the Tkinter event loop. Called only once
         self.window.mainloop()
 
+
+    def screenshot_click(self):
+        #def save_canvas_as_image(canvas, filename):
+        # Export the canvas content as PostScript
+        ps_data = self.canvas.postscript(colormode='color')
+
+        # Create a PIL Image from the PostScript data
+        image = Image.open(io.BytesIO(ps_data.encode('utf-8')))
+
+        image.save(filename)         #Save the image as a file
+        return image
 
     def clearresults_click(self):
         Service.job.setIdle()
@@ -392,8 +406,7 @@ class App:
 
     def close_window(self): # Збергіаємся та виходимо
         print("closing main window")
-        cfg.save_cfg()
-        #self.window.destroy()
+        self.window.destroy()
 
 
     def hide_window(self): # вимикаємо отримання кадрів, відмальовку і ховаємо вікно
@@ -743,6 +756,8 @@ class App:
         # get an item from the queue without blocking
         try:
             item = Service.queue1.get(block=False) #.get_nowait()
+            if item=='GuiStop':
+                return
             if item=='Maximize':
                 self.window.state('zoomed')
                 #self.window.attributes("-fullscreen", True)
@@ -756,29 +771,14 @@ class App:
             if item=='GuiHide':                 self.hide_window()
             if item=='CameraReset':
                 Service.vid.reset()
-                #del Service.vid
-                #Service.vid = Service.MyVideoCapture(0)
-
             if item=='ShowButtons':
                 self.showbuttons(True)
             if item=='HideButtons':
                 self.showbuttons(False)
-
-##            # тут проблема, ми не знаємо є в нас активна камера чи ні!
-##            if item=='CameraCapture':
-##                sts.IN_CameraCapture = True
-##                #Service.vid.snapshot(sts.IN_CameraCaptureFilePath) #чистий кадр
-##                #Service.vid.snapshot() #чистий кадр миттєвий
-##
-##                # збережений в класі кадр з контурами self.framec зберігаємо в файл
-##                #print('seve with contours')
-##                #cv2.imwrite("frame-" + time.strftime("%d-%m-%Y-%H-%M-%S") + '_contours.jpg',cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-
             if item=='ShowResults':
                 #створення логів і текста для Label
                 rslt=job.result
                 self.status_label['text']=f"Outer={rslt['OuterStatus']} ({rslt['Outer']}), inner={rslt['InnerStatus']} ({rslt['Inner']})"
-
         except:
             #print(queue2.get(False))
             pass
@@ -786,11 +786,42 @@ class App:
 
 
     def update(self):
+        # get an item from the queue without blocking
+        try:
+            item = Service.queue1.get(block=False) #.get_nowait()
+            if item=='GuiStop':
+                self.close_window()
+                return
+            if item=='Maximize':
+                self.window.state('zoomed')
+                #self.window.attributes("-fullscreen", True)
+            if str(item).startswith('MsgBox'):
+                tk.messagebox.showinfo(title='Увага', message=str(item)[6:])
+            if item=='ConfigShow':
+                self.framecfg.pack(side='right', fill='both')
+            if item=='ConfigHide':
+                self.framecfg.pack_forget()
+            if item=='GuiShow':                 self.show_window()
+            if item=='GuiHide':                 self.hide_window()
+            if item=='CameraReset':
+                Service.vid.reset()
+            if item=='ShowButtons':
+                self.showbuttons(True)
+            if item=='HideButtons':
+                self.showbuttons(False)
+            if item=='ShowResults':
+                #створення логів і текста для Label
+                rslt=job.result
+                self.status_label['text']=f"Outer={rslt['OuterStatus']} ({rslt['Outer']}), inner={rslt['InnerStatus']} ({rslt['Inner']})"
+        except:
+            #print(queue2.get(False))
+            pass
+
         if job.isStart():
             sts.IN_CameraShow = True
             job.setWork()             # і активуємо робочий режим
 
-        self.QueueWork()
+        #self.QueueWork()
 
         #тільки коли отримуємо картинку - робимо щось ще, інакше оновленна кожні 250мс
         if sts.IN_CameraShow == False:
