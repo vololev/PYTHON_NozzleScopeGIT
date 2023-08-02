@@ -11,6 +11,7 @@ import logging
 
 
 
+
 class MyVideoCapture:
     def __init__(self, CamNum):
         # Open the video source
@@ -176,6 +177,11 @@ class MyVideoCapture:
         #self.cap.set(cv2.CAP_PROP_CONTRAST, cfg('cam.contrast'))
         #self.cap.set(cv2.CAP_PROP_GAIN, cfg('cam.gain'))
 
+    def save_parameters(self, file_path):
+        params = self.get_parameters() #extracting from camera to dictionary
+        with open(file_path, "w") as file:  #save dictionary to file
+            json.dump(params, file)
+
     # Release the video source when the object is destroyed
     def __del__(self):
         self.shutdown()
@@ -184,74 +190,108 @@ class MyVideoCapture:
 
 
 class Config:
+    path='CONF\config.json'
     configSchema = {
         "type": "object",
         "properties":
             {
-            "gui.lang": {"type": "string", "enum":["en","uk","ru"]},
-            "cam.fps": {"type": "number", "enum":[5,10,15,30]},
-            "cam.selected": {"type": "number","minimum":0,"maximum":2},
-            "cam.rotation": {"type": "number","enum":[0, 90, 180, 270]},
+            "gui.lang": {"type": "string", "enum":["en","uk","ru"], "default":"en"},
+            "gui.normal" : {"type": "boolean", "default": True},
+            "cam.fps": {"type": "number", "enum":[5,10,15,30], "default":10},
+            "cam.selected": {"type": "number","minimum":0,"maximum":2, "default":0},
+            "cam.rotation": {"type": "number","enum":[0, 90, 180, 270], "default":0},
             #"cam.fourcc": {"type": "string", "enum":["MJPG","YUYV","H264"]},
             #"cam.resolution": {"type": "string", "enum":["640x480", "800x600", "1280x720", "1280x960","1920x1080"]},
             #"cam.brightness": {"type": "number","minimum":-64,"maximum":64},
             #"cam.contrast": {"type": "number","minimum":0,"maximum":95},
             #"cam.gain": {"type": "number","minimum":0,"maximum":100},
             "crop.left":{"type": "number"}, "crop.top":{"type": "number"}, "crop.size":{"type": "number"},
-            "nozzle.x0":{"type": "number"}, "nozzle.y0":{"type": "number"},
-            "nozzle.zonesize" : {"type": "number","minimum":2,"maximum":64},
-            "autoshots":{"type": "boolean"}
+            "nozzle.x0":{"type": "number", "default":0}, "nozzle.y0":{"type": "number", "default":0},
+            "nozzle.zonesize" : {"type": "number","minimum":2,"maximum":96, "default":48},
+            "autoshots":{"type": "boolean", "default": True},
+            "beam.xysize":{"type": "number", "minimum":6, "maximum":64, "default":48},
+            "grid.show":{"type": "boolean", "default": False},
+            "grid.current": {"type": "number", "default": 0}
             },
         "required":["gui.lang"]
     }
     def __init__(self):
         #ініціалізацію параметрів по замовчанню
-        self.conf_default = {'gui.lang': 'en', 'cam.count' : 0, 'cam.selected' : 0, 'cam.rotation': 90,
-            # 'cam.fourcc' : 'MJPG', 'cam.fps' : 10, 'cam.resolution' : '1280x960',
-            # 'cam.brightness' : 20, 'cam.contrast' : 60, 'cam.gain' : 0,
-            'nozzle.zonesize' : 32,
-            'nozzle.x0' : 0, 'nozzle.y0' : 0, 'scalecoeff' : -1}
-        self.conf=self.read_cfg() #conf_default
+##        self.conf_default = {'gui.lang': 'en', 'cam.count' : 0, 'cam.selected' : 0, 'cam.rotation': 90,
+##            # 'cam.fourcc' : 'MJPG', 'cam.fps' : 10, 'cam.resolution' : '1280x960',
+##            # 'cam.brightness' : 20, 'cam.contrast' : 60, 'cam.gain' : 0,
+##            'nozzle.zonesize' : 32,
+##            'nozzle.x0' : 0, 'nozzle.y0' : 0, 'scalecoeff' : -1}
+        self.conf={}
+        self.read_cfg()
 
-    def __call__(self, key): #ппрямий виклик
-        return self.conf.get(key, 0)
+
+    def __call__(self, key): #ппрямий виклик cfg('somekey')
+        value = self.conf.get(key)
+        if value != None:
+            return self.conf.get(key)
+        else:
+            default=self.configSchema["properties"][key].get("default")
+            return default
+
+    def __setitem__(self, key, value):
+        self.conf[key] = value
 
     def update(self, tmp):
         #In Python 3.9.0 or greater (PEP-584):          z = x | y
         #In Python 3.5 or greater:                      z = {**x, **y}
         self.conf = {**self.conf, **tmp}
 
-    def read_cfg(self):
-        path='CONF\config.json'
-        if os.path.exists(path):
-            with open(path, 'r') as fp:
-                return json.load(fp)
-        else:
-            return self.conf_default
+    def read_cfg(self) -> bool:
+        tmp={}
+        if os.path.exists(self.path):
+            with open(self.path, 'r') as fp:
+                tmp = json.load(fp) #зчитуємо в тимчасовий словник
+                #self.validate(tmp)[0]
+                if self.validate(tmp, self.configSchema)[0]:
+                    self.conf = tmp
+                    print('Validated is:',tmp)
+                    return True
+        return False
+
     def save_cfg(self):
-        path='CONF\config.json'
         print('save_cfg')
-        with open(path, 'w') as fp:
+        with open(self.path, 'w') as fp:
             json.dump(self.conf, fp, sort_keys = True)
     def save_txt(self, text):
-        path='CONF\config.json'
         print('save_txt')
-        with open(path, 'w') as fp:
+        with open(self.path, 'w') as fp:
             fp.write(text)
-        pass
 
-    def validate(self, text):
+
+    # Custom validation function to handle value exceeding maximum and set default value
+    def _validate_with_default(validator, data, instance, schema):
+        if not validator.is_type(instance, "integer"):
+            return
+
+        maximum = schema.get("maximum")
+        minimum = schema.get("minimum")
+        default = schema.get("default")
+
+        if maximum is not None and instance > maximum:
+            instance = default if default is not None else maximum
+        if minimum is not None and instance < minimum:
+            instance = default if default is not None else minimum
+
+        yield from validator.descend(instance, schema)
+
+    def validate(self, tmpconf, tmpschema): #dictionary
         # If no exception is raised by validate(), the instance is valid.
         try:
-            self.conf=json.loads(text)
-            z=jsonschema.validate(instance=self.conf, schema=self.configSchema)
+            #tmpconf = json.loads(text)
+            jsonschema.validate(instance=tmpconf, schema=tmpschema)
         except jsonschema.exceptions.ValidationError as err:
-            #tkinter.messagebox.showerror("Error", "JSON is wrong. " + err.message)
-            return False, err.message #Not Valid
+            print('Validate error:', err.message)
+            return False, err.message
         else:
-            self.save_cfg()
-            print('all ok')
+            print('Validation Ok')
             return True, None
+
 
     @property
     def dumps(self):
@@ -306,7 +346,7 @@ class CommandStatus:
         self.Idle = 0          # Нема запиту
         self.Start = 1         # Перед початком роботи, необхідна для підготовчих робіт
         self.Work = 2          # Статус
-        self.Abort = 500       # Закінчили неуспішно
+        self.Abort = 500       # Закінчили неуспішно (аварія)
         self.Ready = 200       # Закінчили успішно
         self.state = self.Idle #Запиту немає, скидати після отримання результатів
         #self.timetostop = 1
@@ -405,10 +445,6 @@ class CommandStatus:
 ##        if job.isWork() and time.time()-self.TimeStart>self.timetostop:
 ##                print("TimeOut happened!!!")
 ##                job.setAbort()
-        #if cfg.conf['autoshots']: queue1.put('CameraCapture')
-        #if cfg.conf['autoshots']: snapshot()
-
-
         result={}
         result['job_state'] = job.state
 
@@ -434,6 +470,8 @@ class CommandStatus:
                     result['Centered'] = sts.OUT_BeamCentered
                     result['Dx'] = sts.OUT_BeamDX
                     result['Dy'] = sts.OUT_BeamDY
+                    sts.IN_BeamAuto = False
+
                 else: #manual
                     if job.state==job.Ready:
                         result['Centered'] = True
@@ -458,26 +496,22 @@ class CommandStatus:
                     result['InnerStatus'], result['InnerStatusId'] = GetNozzleStatus(cfg('CircNewMin'),cfg('CircGoodMinInner'), 0)
 
 
-
         #print(f'results: {result}')
         # Log a message with the current timestamp
         logging.info(f'Result: {result}')
-
+        print('result:', result)
         self.result=result
         #return result
-
 
 
 
 @dataclass
 class Status:
     GuiNoWait:  bool = False                # Прапорець, що ми не будемо очікувтаи натисання кнопки Confirm/Abort
-    IN_CameraShow:  bool = False               #показувати чи не показувати потік з камери, прапорець
+    IN_CameraShow:  bool = False            #показувати чи не показувати потік з камери, прапорець
 
     IN_BeamAuto: bool = False               #шукаємо не шукаємо АВТОматично промінь, прапорець
-    IN_BeamSearching: bool = False          #шукаємо не шукаємо промінь, прапорець
     IN_BeamCalibrating: bool = False        #запуск відбору кольору після натискання кнопки, прапорець
-    IN_BeamShowGrid:  bool = False
 
     IN_NozzleCentering: bool = False        #дозвіл виставляти вручну X0,Y0 через натискаяння клавіш курсору, прапорець
     IN_NetModyfing:     bool = False        #редагуємо сітку, прапорець
@@ -520,7 +554,7 @@ class Status:
     def JSON(self):
         return str(self.__dict__)   # Збирає все в dictionary у вигляді рядка
 
-    def reset(self):
+    def reset(self):                # Скидаємо в нуль
         self.__init__()
 
 
@@ -559,20 +593,19 @@ def hsv2rgb(h,s,v, hdelta):
     return tuple(round(i * 255) for i in colorsys.hsv_to_rgb(h,s,v))
 
 
-def FindLaserBeam(frame, hue, delta):
-    im = frame
+def FindLaserBeam(frame, delta = 10):
+    im = frame # making a copy of incoming frame
     imghsv  = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
 
     #For HSV, hue range is [0,179], saturation range is [0,255], and value range is [0,255]
     #For conversion from
     #hue, sat, val = cv2.split(imghsv) #h=248 paint.net 350
-    lower = np.array([hue-delta,96,96])
-    upper = np.array([hue+delta,255,255])
+    lower = np.array([cfg('beam.hue')-delta,96,96])
+    upper = np.array([cfg('beam.hue')+delta,255,255])
     mask = cv2.inRange(imghsv, lower, upper)
 
 
     (sts.OUT_BeamDX, sts.OUT_BeamDY) = (0, 0)
-    #(sts.OUT_BeamX, sts.OUT_BeamY) = (-1,-1)
 
     contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if len(contours)>0:
@@ -692,8 +725,8 @@ def ExtractContours(frame):
         CycleNozzleAnalyzer(sts.results.zero) #пусте значення
         return frame #вивалюємся
 
+    ## Вимкнуто, бо з ієархіями у нас проблеми
     ##MaxContour=contours_new[MaxIndex]
-    ##    вимкнуто, бо з ієархіями у нас проблеми
     ##    sub_contours=[MaxContour] #Загоняємо найбільший контур першим
     ##    Next=hierarchy[0][MaxIndex][2] # getting first child
     ##    while Next!=-1:
@@ -809,13 +842,12 @@ def NozzleAnalyzeStart(material: int, nozzletype: int):
 #Auto - знаходити промінь і підсвічувати його зеленим чи червоним колом навколо
 #BeamAuto - знаходити промінь і підсвічувати його зеленим чи червоним коло навколо
 #Show - показувати морду чи ні
-#Grid - показувати останню сітку чи ні
-def BeamAnalyzeStart(Auto : bool = None, Grid : bool = None, Show : bool = True):
+def BeamAnalyzeStart(Auto : bool = None, Show : bool = True):
     ErrorStr=""
     if Auto not in (False, True, None):
             ErrorStr+="'auto' must be Boolean.\n"
-    if Grid not in (False, True, None):
-            ErrorStr+="'grid' must be Boolean.\n"
+    #if Grid not in (False, True, None):
+    #        ErrorStr+="'grid' must be Boolean.\n"
     if Show not in (False, True, None):
             ErrorStr+="'show' must be Boolean.\n"
     if len(ErrorStr)>0:
@@ -825,8 +857,6 @@ def BeamAnalyzeStart(Auto : bool = None, Grid : bool = None, Show : bool = True)
     vid.LoadParamsFromFile('CONF\CamBeam.json')
     if Auto:        sts.IN_BeamAuto=True
     else:           sts.IN_BeamAuto=False
-    if Grid:        sts.IN_BeamShowGrid = True
-    else:           sts.IN_BeamShowGrid = False
 
     if Show:
         sts.GuiNoWait = False
@@ -883,8 +913,14 @@ def snapshot(manual = False, name = None, readyframe = None, bwframe = None):
 
 
 def CreateOSD(image, data, keys, left, top, right, bottom, align="center"):
+    current_datetime = datetime.datetime.now()
+
+    # Format it as a string
+    text = current_datetime.strftime('%d.%m.%Y %H:%M') + '. \n'
+
+
     #data = json.loads(json_data) #string->dictionary
-    text = ", ".join([f"{key}={value}" for key, value in data.items() if key in keys])
+    text += ", ".join([f"{key}={value}" for key, value in data.items() if key in keys])
 
 
     # Convert coordinates from fractions to absolute values
@@ -905,7 +941,7 @@ def CreateOSD(image, data, keys, left, top, right, bottom, align="center"):
     # Define font properties
     #font = cv2.FONT_HERSHEY_SIMPLEX
     font = cv2.FONT_HERSHEY_DUPLEX
-    font_scale = 0.6
+    font_scale = 0.75
     font_thickness = 1
 
     line_spacing = int(2 * cv2.getTextSize(text, font, font_scale, font_thickness)[0][1])
@@ -916,7 +952,7 @@ def CreateOSD(image, data, keys, left, top, right, bottom, align="center"):
     lines = []
     line = ""
     for word in words:
-        if '\n' in word:
+        if '\n' in word: #шось не дуже працює
             line += word.split('\n')[0]
             lines.append(line)
             line = word.split('\n')[1] + " "

@@ -1,5 +1,8 @@
 ﻿import Service
 
+#import threading
+from tktooltip import ToolTip
+
 import tkinter as tk
 from tkinter import ttk, filedialog, colorchooser, messagebox
 from tkinter.tix import *
@@ -19,14 +22,13 @@ import json
 
 def make_request():
     req = request('Calibrate', params = [4]) #робимо запит
+    print('request:', req)
     response = requests.post('http://127.0.0.1:6000', json=req)
 
-
-
-
 def make_request_thread():
-    t = threading.Thread(target=make_request)
-    t.start()
+    pass
+    #t = threading.Thread(target=make_request)
+    #t.start()
 
 
 class AutoRepeatButton(tk.Button):
@@ -66,7 +68,6 @@ class App:
         pass
     def __init__(self, window, window_title):
         self.SetNoCamera = False
-        self.gridslist = ['Center','Grid', 'Military']
 
         # create a larger font
         self.megafont = Font(family="Helvetica", size=26, weight='bold')
@@ -81,10 +82,15 @@ class App:
         self.LinesH={} # horizontal
         self.LinesV={} # vertical
 
-        window.attributes('-toolwindow', True)
-        #window.protocol("WM_DELETE_WINDOW", self.close_window)
         window.protocol("WM_DELETE_WINDOW", self.hide_window)
         window.resizable(False, False)
+        if cfg('gui.normal') == True:
+            window.attributes('-toolwindow', False)
+            sts.IN_CameraShow = True
+        else:
+            #window.protocol("WM_DELETE_WINDOW", self.close_window)
+            window.attributes('-toolwindow', True)
+
 
 
         self.window = window
@@ -101,7 +107,7 @@ class App:
         #self.window.bind('<Next>', self.PageDown)
 
         self.window.bind('<Control-Key-o>',self.CtrlO) #відкриваємо файл
-        self.window.bind('<Control-Key-f>',self.CtrlF) #починаємо пошук лазер
+        #self.window.bind('<Control-Key-f>',self.CtrlF) #починаємо пошук лазер
         self.window.bind('<Control-Key-r>',self.CtrlR) #починаємо аналіз сопел
         self.window.bind('<Control-Key-p>',self.CtrlP) #друк всіх параметрів
 
@@ -129,19 +135,19 @@ class App:
 
 
 
-        bottom_panel = tk.Frame(work_frame, height=48)
-        bottom_panel.pack(side='top')
-        bottom_panel.grid_columnconfigure(0, minsize = 200)
-        #bottom_panel.pack(side='top', fill='both')
-        self.status_label = tk.Label(bottom_panel, height=2, text='0', bg=('ivory'), font=self.mediumfont)
-        self.status_label.grid(row=0, column=0, padx = 5, pady = 5, sticky = 'nsew')
-        #status_memo.pack(side='left')
+        bottom_frame = tk.Frame(work_frame, height=48)
+        bottom_frame.pack_propagate(0)  # Don't shrink
+        bottom_frame.pack(side='bottom', fill='x')
+        #bottom_frame.grid_columnconfigure(0, minsize = 600)
+        #bottom_frame.grid_propagate(False)
 
-        self.btnConfirm = tk.Button(bottom_panel, text = 'Confirm', bg='green', height=2, width = 6, anchor=tk.CENTER, command = self.btnConfirm_click)
-        self.btnAbort = tk.Button(bottom_panel, text = 'Abort', bg='red', height=2, width = 6, anchor=tk.CENTER, command = self.btnAbort_click)
-        self.btnConfirm.grid(row=0, column=1, padx = 5)
-        self.btnAbort.grid(row=0, column=2, padx = 5)
+        self.btnConfirm = tk.Button(bottom_frame, text = 'Confirm', bg='green', height=2, width = 6, anchor=tk.CENTER, command = self.btnConfirm_click, state = 'disabled')
+        self.btnConfirm.pack(side='right', padx = 8)
+        self.btnAbort = tk.Button(bottom_frame, text = 'Abort', bg='red', height=2, width = 6, anchor=tk.CENTER, command = self.btnAbort_click, state = 'disabled')
+        self.btnAbort.pack(side='right', padx = 5)
 
+        self.status_label = tk.Label(bottom_frame, height=2, bg=('ivory'), font=self.mediumfont)
+        self.status_label.pack(expand = True, fill = 'both', padx=8, pady=5)
 
 
         self.framecfg = tk.Frame(window, relief='sunken', borderwidth=1)
@@ -152,19 +158,21 @@ class App:
 
 
         # Button to take a snapshot
-        btn_screenshot=tk.Button(actions_frame, text="ScreenShot", width=10, command=Service.snapshot)
-        #btn_screenshot=tk.Button(actions_frame, text="ScreenShot", width=10, command=self.screenshot_click)
+        btn_screenshot=tk.Button(actions_frame, text="Screen\nShot", width=10, command=Service.snapshot)
         #btn_snapshot=tk.Button(actions_frame, text="Camera\nsnapshot", width=10, command=lambda: Service.snapshot(readyframe=self.canvas_image()))
-        btn_screenshot.pack(side='left', padx=5, pady=5)
+        btn_screenshot.pack(side='left', padx=8, pady=8)
 
         # Button to launch Nozzle analyze AUTO
-        btn_analyze=tk.Button(actions_frame, text="Nozzle\nAnalyze", width=10, command = self.analyze_click)
-        #self.btn_snapshot.pack(anchor=tk.CENTER, expand=True)
-        btn_analyze.pack(side='left', padx=8, pady=8)
+        btn_nozzleanalyze=tk.Button(actions_frame, text="Nozzle\nAnalyze", width=10, command = self.nozzleanalyze_click)
+        btn_nozzleanalyze.pack(side='left', padx=8, pady=8)
+
+        # Button to launch Beam Analyzer ()
+        btn_beamanalyze=tk.Button(actions_frame, text="Laser Beam\nFinder", width=10,  command = self.beamanalyze_click)
+        btn_beamanalyze.pack(side='left', padx=8, pady=8)
 
         btn_clearresults=tk.Button(actions_frame, text="Clear\nresults", width=10, command = self.clearresults_click)
-        #self.btn_snapshot.pack(anchor=tk.CENTER, expand=True)
         btn_clearresults.pack(side='left', padx=8, pady=8)
+        ToolTip(btn_clearresults, msg="Clear Analyze results")
 
 
 
@@ -209,39 +217,59 @@ class App:
         settings_frame.pack(side="top", fill="both", padx=5, pady=3)
 
 
+
+        # create label frame for controls
+        camera_frame = tk.LabelFrame(settings_frame, text="USB Camera")
+        #controls_frame.grid(row=7, columnspan=4, padx=5, pady=5)
+        camera_frame.pack(padx=10, pady=5, fill='both')
+
+        # Button for cam settings
+        btn_camsett=tk.Button(camera_frame, text="Settings", width=8, height=2, command=self.settings)
+        btn_camsett.pack(padx=5, pady=5, side="left")
+        ToolTip(btn_camsett, msg="USB camera image settings")
+
+        # Button for cam save
+        btn_camsave=tk.Button(camera_frame, text="Save as..", width=8, height=2, command=self.do_popup)
+        btn_camsave.pack(padx=5, pady=5, side="left")
+
+        # Button for cam reset
+        btn_camreset=tk.Button(camera_frame, text="Reset", width=8, height=2, command=self.camreset)
+        btn_camreset.pack(padx=5, pady=5, side="left")
+        ToolTip(btn_camreset, msg="Reset camera - same as\nplug-out and plug-in")
+
+
         # create buttons frame
         widgets_frame = tk.Frame(settings_frame)
         #widgets_frame.pack(side="top", padx=5, pady=5)
         widgets_frame.pack(side="top", padx=5, pady=5)
 
-        # Button for cam settings
-        btn_camsett=tk.Button(widgets_frame, text="Camera", width=8, height=2, command=self.settings)
-        btn_camsett.pack(padx=5, pady=5, side="left")
-
-        # Button for cam reset
-        btn_camreset=tk.Button(widgets_frame, text="Cam\nreset", width=8, height=2, command=self.camreset)
-        btn_camreset.pack(padx=5, pady=5, side="left")
-
         # Button to set beam color
         self.btn_beamcolor=tk.Button(widgets_frame, text="Pick beam\ncolor", width=8, height=2, command=self.beamcolor)
+        ToolTip(self.btn_beamcolor, msg='Click on center of "Dark beam" /nto select it color and size')
         self.btn_beamcolor.pack(padx=5, pady=5, side="left")
 
         # Button to calibrate nozzle and center
-        self.btn_calibrate=tk.Button(widgets_frame, text="Calibrate", width=8, height=2, command=self.calibrate)
+        self.btn_calibrate=tk.Button(widgets_frame, text="Calibrate\nscale", width=8, height=2, command=self.calibrate)
+        ToolTip(self.btn_calibrate, msg='Calibrate scale by using new/nnozzle with known size')
         self.btn_calibrate.pack(padx=5, pady=5, side="left")
 
 
+        gridslist = ("Center","Grid", "Military")
         # ShowGrid checkbutton
         self.showgrid= tk.BooleanVar()
-        chkbtn_showgrid = tk.Checkbutton(widgets_frame, width=4, text = 'Grid', command=self.chkbtn_showgrid_changed, variable = self.showgrid, onvalue = True, offvalue = False)
+        self.showgrid.set(cfg('grid.show'))
+        chkbtn_showgrid = tk.Checkbutton(widgets_frame, width=4, text = 'Grid', command=self.chkbtn_showgrid_change, variable = self.showgrid, onvalue = True, offvalue = False)
         chkbtn_showgrid.pack(padx=5, pady=5, side="top")
-
         # Combobox to select grid
-        self.cmbSight=ttk.Combobox(widgets_frame, state='readonly', width=8, values=self.gridslist) #, font=myFontBig)
-        #cmbSight.bind('<<ComboboxSelected>>', self.sight)
-        self.cmbSight.current(0)
-        self.cmbSight.pack(padx=5, pady=5, side="left")
 
+        z = cfg('grid.show')
+        self.cmbSight=ttk.Combobox(widgets_frame, state = lambda z: 'readonly' if z else 'disabled', width=8, values = gridslist) #, font=myFontBig)
+        self.cmbSight.pack(padx=5, pady=5, side="left")
+        self.cmbSight.bind('<<ComboboxSelected>>', self.grid_change)
+        #if self.showgrid.get():
+            #cfg('grid.current')
+        #else:
+        self.cmbSight.current(cfg('grid.current'))
 
 
         # create label frame for controls
@@ -304,12 +332,16 @@ class App:
         self.but_restore = tk.Button(json_frame, text="Restore", width=10, command=self.restore)
         self.but_restore.pack(padx=5, pady=5,side = 'right')
 
+        self.popup() #створюємо менюшку
+
+
 
         # Make all columns the same width using the 'uniform' option
         for i in range(4):
             self.framecfg.columnconfigure(i, uniform='col', minsize=50)
 
-        self.hide_window() #ховаємо вікно при запуску
+        if cfg.conf.get('gui.normal', False) == False:
+            self.hide_window() #ховаємо вікно при запуску
 
         # Після першого запуску, метод "update", буде автоматично запускатися кожні delay мс. 100мс = 10fps
         self.delay = 100
@@ -317,6 +349,28 @@ class App:
 
         # Start the Tkinter event loop. Called only once
         self.window.mainloop()
+
+    #create menu
+    def popup(self):
+        self.popup_menu = tk.Menu(self.window,
+                                       tearoff = 0)
+
+        self.popup_menu.add_command(label = "Save as Nozzle profile",
+                                    command = lambda:Service.vid.save_parameters('CONF\CamNozzle.json'))
+
+        self.popup_menu.add_command(label = "Save as Beam profile",
+                                    command = lambda:Service.vid.save_parameters('CONF\CamBeam.json'))
+        self.popup_menu.add_separator()
+        self.popup_menu.add_command(label = "One Extra")
+
+    #display menu on right click
+    def do_popup(self):
+        x = self.window.winfo_pointerx()
+        y = self.window.winfo_pointery()
+        try:
+            self.popup_menu.tk_popup(x-8, y-8)
+        finally:
+            self.popup_menu.grab_release()
 
 
     def screenshot_click(self):
@@ -331,11 +385,16 @@ class App:
         return image
 
     def clearresults_click(self):
+        sts.IN_CameraShow = True
         Service.job.setIdle()
 
 
-    def analyze_click(self):
+    def nozzleanalyze_click(self):
         start_ok, start_result = Service.NozzleAnalyzeStart(1, 1)
+
+    def beamanalyze_click(self):
+        start_ok, start_result = Service.BeamAnalyzeStart(Auto=True, Show = False)
+
 
 
     def btn_beam_click(self):
@@ -384,21 +443,20 @@ class App:
             cfg.conf['crop.size']+=4
 
 
-    def showbuttons(self, show : bool):
-        if show:
-            print('buttons show')
-            self.btnConfirm.grid(row=0, column=1)
-            self.btnAbort.grid(row=0, column=2)
+    def confirmabort_enable(self, enable : bool):
+        print('buttons enable', enable)
+        if enable:
+            self.btnConfirm['state'] = 'normal'
+            self.btnAbort['state'] = 'normal'
         else:
-            print('buttons hide')
-            self.btnConfirm.place_forget()
-            self.btnAbort.place_forget()
+            self.btnConfirm['state'] = 'disabled'
+            self.btnAbort['state'] = 'disabled'
 
 
-    def chkbtn_showgrid_changed(self):
-        sts.IN_BeamShowGrid = self.showgrid.get()
-        if sts.IN_BeamShowGrid:
-            self.cmbSight['state'] = 'normal'
+    def chkbtn_showgrid_change(self):
+        cfg['grid.show'] = self.showgrid.get()
+        if cfg('grid.show'):
+            self.cmbSight['state'] = 'readonly'
         else:
             self.cmbSight['state'] = 'disabled'
         pass
@@ -435,14 +493,6 @@ class App:
     def btnAbort_click(self):
         self.hide_window()
         job.setAbort() #признак того що закінчили
-
-
-##    def btnReject_click(self):
-##        if sts.IN_BeamSearching:
-##            #Відхиляємо операцію і ховаємо кнопку
-##            self.btnReject.place_forget()
-##            sts.IN_BeamSearching = False
-##            sts.OUT_BeamcenteringComplete = False
 
 
     #def check_hand_leave(): # Не знаю для чого
@@ -577,13 +627,9 @@ class App:
 
 
     def CtrlF(self, event):
-        if sts.IN_BeamSearching:
-            sts.results.reset()
-        sts.IN_BeamSearching=not(sts.IN_BeamSearching)
-        print(f"find: {sts.IN_BeamSearching}")
+        pass
 
     def CtrlR(self, event):
-        #sts.IN_NozzleAnalyzingStart = not(sts.IN_NozzleAnalyzingStart)
         pass
 
     def CtrlP(self, event):
@@ -632,11 +678,14 @@ class App:
         #cfg.save_txt(self.text_cfg.get(1.0,tk.END)) #saving txt into json file
 
         tmp=self.text_cfg.get(1.0,tk.END) #getting data from
-        res, text = cfg.validate(tmp)
+        tmpdict = json.loads(tmp)
+        res, text = cfg.validate(tmpdict)
         if res: # validate and save
             self.restart() # ok, restart the program with new settings
         else:
             tk.messagebox.showerror("Error", "JSON is wrong. " + text)
+            # we need here just read old (good settings)
+
             self.restore() # make reset to previous (saved) value
 
 
@@ -725,25 +774,29 @@ class App:
 
 
 
-    def sight(self,event): # Вибираємо сітку для відображення в комбобоксі
-        #self.curr_sight=event.widget.get() # !!! Дуже фігово зроблено - просто витягуємо значення  -це неправильно
-        self.window.focus_set() #Знімаємо фокусування з контрола
-        return
+    def grid_change(self,event): # Вибираємо сітку для відображення в комбобоксі
+        selected_item = event.widget.get()
+        selected_index = event.widget.current()
+        print(f'item={selected_item} index={selected_index}')
+        cfg['grid.current'] = selected_index
+        #self.window.focus_set() #Знімаємо фокусування з контрола
+
 
     def beamcolor(self):
         sts.IN_BeamCalibrating = not sts.IN_BeamCalibrating
         if sts.IN_BeamCalibrating:
-            self.btn_calibrate['relief']=tk.SUNKEN
+            self.btn_beamcolor['relief']=tk.SUNKEN
         else:
-            self.btn_calibrate['relief']=tk.RAISED
+            self.btn_beamcolor['relief']=tk.RAISED
         #    event.widget['relief']=tk.RAISED
 
     def calibrate(self):
+        pass
         #req = request('Calibrate', params = [4]) #робимо запит
         #req = request('ping') #робимо запит
         #response = requests.post('http://127.0.0.1:6000', json=req)
         #print('Ping', response)
-        make_request_thread()
+        #make_request()
 
 
     def settings(self):
@@ -772,13 +825,9 @@ class App:
             if item=='CameraReset':
                 Service.vid.reset()
             if item=='ShowButtons':
-                self.showbuttons(True)
+                self.confirmabort_enable(True)
             if item=='HideButtons':
-                self.showbuttons(False)
-            if item=='ShowResults':
-                #створення логів і текста для Label
-                rslt=job.result
-                self.status_label['text']=f"Outer={rslt['OuterStatus']} ({rslt['Outer']}), inner={rslt['InnerStatus']} ({rslt['Inner']})"
+                self.confirmabort_enable(False)
         except:
             #print(queue2.get(False))
             pass
@@ -806,13 +855,9 @@ class App:
             if item=='CameraReset':
                 Service.vid.reset()
             if item=='ShowButtons':
-                self.showbuttons(True)
+                self.confirmabort_enable(True)
             if item=='HideButtons':
-                self.showbuttons(False)
-            if item=='ShowResults':
-                #створення логів і текста для Label
-                rslt=job.result
-                self.status_label['text']=f"Outer={rslt['OuterStatus']} ({rslt['Outer']}), inner={rslt['InnerStatus']} ({rslt['Inner']})"
+                self.confirmabort_enable(False)
         except:
             #print(queue2.get(False))
             pass
@@ -821,7 +866,7 @@ class App:
             sts.IN_CameraShow = True
             job.setWork()             # і активуємо робочий режим
 
-        #self.QueueWork()
+        #self.QueueWork() # планував для обробки черги, не знаю чому закоментував
 
         #тільки коли отримуємо картинку - робимо щось ще, інакше оновленна кожні 250мс
         if sts.IN_CameraShow == False:
@@ -840,12 +885,23 @@ class App:
                 Service.cv2.rectangle(self.frame, (x, y), (x + size, y + size), (0, 255, 0), 2)  # (0, 255, 0) represents the color of the rectangle (in BGR format), 2 represents the thickness of the rectangle
 
             if job.isBeamRequest() and sts.IN_BeamAuto:
-                frame = Service.FindLaserBeam(self.frame, cfg('beam.hue'), 10)
+                frame = Service.FindLaserBeam(self.frame)
             elif job.isNozzleRequest():  #and job.isWorks() - входимо в обробник завжди, а не тільки коли запит активний
                 self.frame = Service.ExtractContours(self.frame)
 
             if job.isReady():
-                self.frame = Service.CreateOSD(self.frame, job.result, ['job_name','InnerStatus','OuterStatus','InnerDiameterMM'], 0.05, 0.8, 0.6, 0.95, align='left')
+                if job.isNozzleRequest():
+                    keys = ['job_name','InnerStatus','OuterStatus','InnerDiameterMM']
+                elif job.isBeamRequest():
+                    keys = ['job_name','Centered', 'Dx', 'Dy']
+                self.frame = Service.CreateOSD(self.frame, job.result, keys, 0.05, 0.8, 0.95, 0.95, align='left')
+
+                keys.remove('job_name')
+                output = ', '.join(map(lambda key: f"{key}={job.result[key]}", # авто-формування рядка
+                    filter(lambda key: key in job.result, keys)))
+                self.status_label['text'] = output
+                print('output', output)
+
 
             if sts.IN_CameraCapture and job.isReady():
                 sts.IN_CameraCapture = False
@@ -853,7 +909,7 @@ class App:
                 #Service.vid.snapshot() #чистий кадр
                 #Service.cv2.imwrite("Snapshots/" + time.strftime("%d-%m-%Y-%H-%M-%S") + '_frame.jpg', Service.cv2.cvtColor(frame, Service.cv2.COLOR_RGB2BGR))
 
-            if sts.IN_BeamShowGrid: # or self.showgrid.get()==1:
+            if cfg('grid.show'):
                 self.img = Image.fromarray(self.frame)
                 self.draw = ImageDraw.Draw(self.img, 'RGBA')
 
@@ -866,7 +922,11 @@ class App:
                     self.photo = self.OSD_Grid(8,40)
                 #if self.curr_sight=='Center':
                 if self.cmbSight.get()=='Center':
-                    self.photo = self.OSD_Center(cfg.conf['nozzle.zonesize'], cfg('nozzle.x0')-cfg('crop.left'), cfg('nozzle.y0')-cfg('crop.top'))
+                    self.photo = self.OSD_Center(cfg('nozzle.zonesize'))
+
+            if job.isReady() or job.isAbort(): #20230801
+                sts.IN_CameraShow = False
+                self.confirmabort_enable(False)
 
 ##                if self.showOn.get()==1:
 ##                    #self.photo = cv2.addWeighted(self.frame, 0.5, self.src2, 0.5, 0)
@@ -907,9 +967,12 @@ class App:
                 self.canvas.itemconfigure(nocamera, anchor="center") # Set the text anchor to the center
                 self.canvas.move(nocamera, x, y) # Move to the center
 
+
         self.window.after(self.delay, self.update)
 
-    def OSD_Center (self, r, x, y): #треба потім запхати всередину
+    def OSD_Center (self, r): #треба потім запхати всередину
+        x, y = cfg('nozzle.x0')-cfg('crop.left'), cfg('nozzle.y0')-cfg('crop.top')
+
         self.draw.ellipse((x-r,y-r,x+r,y+r), fill = (255, 255, 255, 16), outline = (255, 255, 255, 64), width=4)
         self.draw.ellipse((x-8,y-8,x+8,y+8), fill = (255, 0, 0, 64))
         self.draw.line((x-1.5*r,y,x-r-1,y),fill = (255, 255, 255, 64), width=4)
@@ -919,8 +982,9 @@ class App:
         return  ImageTk.PhotoImage(image = self.img)
 
     def OSD_Grid(self, n, d): #сітка
-        x=cfg.conf['nozzle.x0'] - (n/2)*d
-        y=cfg.conf['nozzle.y0'] - (n/2)*d
+        x, y = cfg('nozzle.x0')-cfg('crop.left'), cfg('nozzle.y0')-cfg('crop.top')
+        x-=(n/2)*d
+        y-=(n/2)*d
         for i in range(n+1):
             self.draw.line((x+i*d,y,x+i*d,y+n*d),fill = (255, 255, 255, 64), width=2)
             self.draw.line((x,y+i*d,x+n*d,y+i*d),fill = (255, 255, 255, 64), width=2)
@@ -937,8 +1001,7 @@ class App:
         dw=w/nw
         dh=h/nh
 
-        x0=cfg.conf['nozzle.x0']
-        y0=cfg.conf['nozzle.y0']
+        x0, y0 = cfg('nozzle.x0')-cfg('crop.left'), cfg('nozzle.y0')-cfg('crop.top')
 
         x=x0 - w/2
         y=y0 - l1/2

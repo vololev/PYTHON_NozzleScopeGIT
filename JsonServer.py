@@ -1,8 +1,4 @@
-﻿"""
-This module create JSON-RPC Server
-"""
-
-
+﻿# This module create JSON-RPC Server
 from jsonrpcserver import method, Result, Success, serve, dispatch, request, Error, InvalidParams
 import os, sys
 import concurrent.futures
@@ -16,10 +12,10 @@ import json
 import time
 import wmi
 
+from http.server import HTTPServer #BaseHTTPRequestHandler, HTTPServer
 
+#state = False
 SCode = 'OK' #!!таке шось, треба одбудмати логіку, що нам повертати якщо це запит без аналізу
-##lockfile = "lockfile"
-
 
 
 @method
@@ -105,7 +101,7 @@ def RunBeamAnalyze()->Result:
     if ret: return error_text
 
     print('RunBeamAnalyze')
-    start_ok, start_result = BeamAnalyzeStart(True, False, False) #!!!Треба потім з 1єї функції зробити 2!
+    start_ok, start_result = BeamAnalyzeStart(Auto = True, Show = False) #!!!Треба потім з 1єї функції зробити 2!
     if start_ok:
         return Wait4Result(2) #і очікує і формує правильну відповідь
     else:
@@ -117,8 +113,10 @@ def RunBeamCentering()->Result:
     ret, error_text = CheckError()
     if ret: return error_text
 
+    queue1.put('ShowButtons')
+
     print('RunBeamAnalyze')
-    start_ok, start_result = BeamAnalyzeStart(False, True, True) #!!!Треба потім з 1єї функції зробити 2!
+    start_ok, start_result = BeamAnalyzeStart(Auto = False, Show = True) #!!!Треба потім з 1єї функції зробити 2!
     if start_ok:
         return Wait4Result(60) #і очікує і формує правильну відповідь
     else:
@@ -232,18 +230,22 @@ def SystemExit():
     executor.shutdown(wait=True)
     print("All threads have been closed. Total shutdown")
 
-    #server.shutdown()
-    #print("Stop JSON-RPC server")
 
-    sys.exit(1) #!!ПОКИ ЩО НЕ ПРАЦЮЄ, ТРЕБА РОБИТИ ЗАГЛУШЕННЯ ДОЧІРНІХ threads
-    #os._exit(1) # Працюємо як рубильник
-
-
+    #sys.exit(1) #!!ПОКИ ЩО НЕ ПРАЦЮЄ, ТРЕБА РОБИТИ ЗАГЛУШЕННЯ ДОЧІРНІХ threads
+    os._exit(1) # Працюємо як рубильник
 
 
 @method
 def ping() -> Result:
+    print('ping')
     return Success(SCode)
+
+
+##def on_clicked(icon, item):
+##    global state
+##    state = not item.checked
+
+
 
 # Create a ThreadPoolExecutor
 executor = concurrent.futures.ThreadPoolExecutor()
@@ -264,12 +266,14 @@ elif __file__:
 
 SEPARATOR = pystray.MenuItem('- - - -', None)
 print(os.getcwd())
-image = PIL.Image.open("IMG\laser.png")
+image = PIL.Image.open("IMG\laser3.png")
 menu = (pystray.MenuItem('Config', action=GuiShowConfig, default=False),
         pystray.MenuItem('Show GUI', action=GuiShowClick, default=True),
         pystray.MenuItem(SEPARATOR, None),
-        pystray.MenuItem('Stop && Exit ', SystemExit),)
-icon = pystray.Icon("test", image, "Nozzle Analyzer", menu)
+        pystray.MenuItem('Stop && Exit ', SystemExit),
+        #pystray.MenuItem('On TOP', on_clicked, checked=lambda item: state)
+        )
+icon = pystray.Icon("test", image, "Nozzle Scope", menu)
 #icon.title="New title for icon"
 
 if __name__ == "__main__":
@@ -280,5 +284,9 @@ if __name__ == "__main__":
 
     # Start the JSON-RPC server
     #server = serve(port=6000) #Це не працює - метод serve не залишає посилання на об'єкт сервера!!!
+    # проблема Є і внесена в Git, автор обіцяв вирішити її наступній версії
+    # https://github.com/explodinglabs/jsonrpcserver/issues/264
+    # Always shut down server when using serve()
+
+    print('Starting JSON-RPC server')
     serve(port=6000)
-    #print('Starting JSON-RPC server')
